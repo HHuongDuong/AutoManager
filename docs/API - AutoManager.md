@@ -33,13 +33,31 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
     }
   - Response 201: created order object with server `id`, canonical `order_code`, and `created_at`.
   - Behavior: server uses `Idempotency-Key` to dedupe; if duplicate, returns existing order (200) or 409 if conflict cannot be resolved.
+  - RBAC: `ORDERS_CREATE`
 
 - GET /orders/{order_id}
   - Response 200: full order with items, payments, statuses.
+  - RBAC: `ORDERS_VIEW`
+
+- GET /orders
+  - Query: `branch_id`, `from`, `to`
+  - RBAC: `ORDERS_VIEW`
 
 - PATCH /orders/{order_id}
   - Purpose: update mutable fields (e.g., add item, change status) while preserving idempotency semantics.
   - Body: partial order fields (items as diffs or complete replacement depending on API mode).
+
+- POST /orders/{order_id}/items
+  - RBAC: `ORDERS_UPDATE`
+  - Add item to order
+
+- PATCH /orders/{order_id}/items/{item_id}
+  - RBAC: `ORDERS_UPDATE`
+  - Update item quantity/price
+
+- DELETE /orders/{order_id}/items/{item_id}
+  - RBAC: `ORDERS_UPDATE`
+  - Remove item
 
 - POST /orders/batch-sync
   - Mục đích: endpoint dành cho Sync Agent gửi batch orders when reconnecting.
@@ -52,6 +70,11 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - Body: { "amount": 100.00, "payment_method": "CASH|CARD|QR|WALLET|OTHER", "provider_metadata": { } }
   - Response 201: payment record
   - Note: current implementation supports `CASH` only; other methods are accepted but adapter not implemented.
+  - RBAC: `ORDERS_PAY`
+
+- POST /orders/{order_id}/close
+  - RBAC: `ORDERS_UPDATE`
+  - Closes order if `payment_status` is `PAID`
 
 ## Products & Catalog
 
@@ -61,6 +84,34 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
 - POST /products (admin)
   - Create / update / delete endpoints require RBAC (role: manager/admin).
 
+- GET /product-categories
+  - RBAC: `PRODUCT_VIEW`
+
+- POST /product-categories
+  - RBAC: `PRODUCT_MANAGE`
+  - Body: { "name": "string" }
+
+- PATCH /products/{id}
+  - RBAC: `PRODUCT_MANAGE`
+
+- DELETE /products/{id}
+  - RBAC: `PRODUCT_MANAGE`
+
+- GET /topping-groups
+  - RBAC: `PRODUCT_VIEW`
+
+- POST /topping-groups
+  - RBAC: `PRODUCT_MANAGE`
+
+- GET /toppings?group_id={id}
+  - RBAC: `PRODUCT_VIEW`
+
+- POST /toppings
+  - RBAC: `PRODUCT_MANAGE`
+
+- POST /products/{id}/toppings
+  - RBAC: `PRODUCT_MANAGE`
+
 ## Inventory
 
 - GET /inventory/transactions?branch_id={id}&from=&to=
@@ -68,6 +119,34 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
 
 - POST /inventory/transactions
   - Body: { "branch_id": "uuid", "ingredient_id": "uuid", "order_id": "uuid|null", "quantity": 1.0, "transaction_type": "IN|OUT|ADJUST", "reason": "string" }
+  - RBAC: `INVENTORY_MANAGE`
+
+- GET /ingredients
+  - RBAC: `INVENTORY_VIEW`
+
+- POST /ingredients
+  - RBAC: `INVENTORY_MANAGE`
+  - Body: { "name": "string", "unit": "string" }
+
+- PATCH /ingredients/{id}
+  - RBAC: `INVENTORY_MANAGE`
+
+- DELETE /ingredients/{id}
+  - RBAC: `INVENTORY_MANAGE`
+
+## Reports & analytics
+
+- GET /reports/revenue?branch_id=&from=&to=&group_by=day|month
+  - RBAC: `REPORT_VIEW`
+  - Returns bucketed revenue and order counts
+
+- GET /reports/inventory?branch_id=&ingredient_id=&from=&to=
+  - RBAC: `REPORT_VIEW`
+  - Returns aggregated inventory movements
+
+- GET /reports/attendance?branch_id=&from=&to=
+  - RBAC: `REPORT_VIEW`
+  - Returns total hours by employee
 
 ## Users / Staff
 

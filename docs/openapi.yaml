@@ -330,6 +330,62 @@ paths:
         '400':
           description: Validation error
 
+  /orders/{order_id}/items:
+    post:
+      summary: Add order item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderItem'
+      responses:
+        '201':
+          description: Item added
+
+  /orders/{order_id}/items/{item_id}:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update order item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                unit_price:
+                  type: number
+      responses:
+        '200':
+          description: Updated
+    delete:
+      summary: Delete order item
+      responses:
+        '200':
+          description: Deleted
+
+  /orders/{order_id}/close:
+    post:
+      summary: Close order
+      responses:
+        '200':
+          description: Closed
+
   /products:
     get:
       summary: List products (optionally by branch)
@@ -339,6 +395,15 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: category_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           description: Product list
@@ -348,6 +413,160 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Product'
+    post:
+      summary: Create product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch_id, name, price]
+              properties:
+                branch_id:
+                  type: string
+                  format: uuid
+                category_id:
+                  type: string
+                  format: uuid
+                sku:
+                  type: string
+                name:
+                  type: string
+                price:
+                  type: number
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Product created
+
+  /products/{product_id}:
+    parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Product updated
+    delete:
+      summary: Delete product
+      responses:
+        '200':
+          description: Product deleted
+
+  /product-categories:
+    get:
+      summary: List product categories
+      responses:
+        '200':
+          description: Category list
+    post:
+      summary: Create product category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Category created
+
+  /topping-groups:
+    get:
+      summary: List topping groups
+      responses:
+        '200':
+          description: Topping groups
+    post:
+      summary: Create topping group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: Topping group created
+
+  /toppings:
+    get:
+      summary: List toppings
+      parameters:
+        - name: group_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Toppings list
+    post:
+      summary: Create topping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_id, name]
+              properties:
+                group_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                price:
+                  type: number
+      responses:
+        '201':
+          description: Topping created
+
+  /products/{product_id}/toppings:
+    post:
+      summary: Attach topping to product
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topping_id]
+              properties:
+                topping_id:
+                  type: string
+                  format: uuid
+                price_override:
+                  type: number
+      responses:
+        '201':
+          description: Attached
 
   /inventory/transactions:
     get:
@@ -358,6 +577,21 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: ingredient_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: List
@@ -389,6 +623,183 @@ paths:
       responses:
         '201':
           description: Created
+
+  /ingredients:
+    get:
+      summary: List ingredients
+      responses:
+        '200':
+          description: Ingredients list
+    post:
+      summary: Create ingredient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+      responses:
+        '201':
+          description: Ingredient created
+
+  /ingredients/{ingredient_id}:
+    parameters:
+      - name: ingredient_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update ingredient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+    delete:
+      summary: Delete ingredient
+      responses:
+        '200':
+          description: Deleted
+
+  /reports/revenue:
+    get:
+      summary: Revenue report
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [day, month]
+      responses:
+        '200':
+          description: Revenue by time bucket
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    bucket:
+                      type: string
+                      format: date-time
+                    orders:
+                      type: integer
+                    revenue:
+                      type: number
+
+  /reports/inventory:
+    get:
+      summary: Inventory report
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: ingredient_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Inventory movement summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    ingredient_id:
+                      type: string
+                      format: uuid
+                    total_in:
+                      type: number
+                    total_out:
+                      type: number
+                    total_adjust:
+                      type: number
+
+  /reports/attendance:
+    get:
+      summary: Attendance report
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Attendance totals by employee
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    employee_id:
+                      type: string
+                      format: uuid
+                    full_name:
+                      type: string
+                    total_hours:
+                      type: number
 
   /users:
     post:
