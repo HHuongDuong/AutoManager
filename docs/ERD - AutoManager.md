@@ -41,6 +41,11 @@ entity role_permissions {
   +permission_id : UUID <<FK>>
 }
 
+entity user_roles {
+  +user_id : UUID <<FK>>
+  +role_id : UUID <<FK>>
+}
+
 entity audit_logs {
   +id : UUID <<PK>>
   user_id : UUID <<FK>>
@@ -49,7 +54,8 @@ entity audit_logs {
 }
 
 users ||--|| employees
-users }o--o{ roles
+users ||--o{ user_roles
+roles ||--o{ user_roles
 roles ||--o{ role_permissions
 permissions ||--o{ role_permissions
 users ||--o{ audit_logs
@@ -163,7 +169,7 @@ orders ||--o{ inventory_transactions
 ```
 
 ## Consolidated ERD notes
-- Merged concepts: split `users` and `employees` (employee profile linked to user account). Keep RBAC tables (`roles`, `permissions`, `role_permissions`).
+- Merged concepts: split `users` and `employees` (employee profile linked to user account). RBAC uses `user_roles`, `roles`, `permissions`, `role_permissions`.
 - Orders support `order_type` (DINE_IN/TAKEAWAY), `table_id` optional for TAKEAWAY. Include `client_id` and `idempotency_key` for offline sync and idempotency.
 - Products, toppings, and product_toppings normalized for price overrides.
 - Inventory modeled by `ingredients` + `inventory_transactions` with optional link to `order_id` for processing traces (but system won't auto-decrement inventory on sale by policy).
@@ -203,6 +209,7 @@ CREATE TABLE employees (
 CREATE TABLE roles (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL);
 CREATE TABLE permissions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), code TEXT UNIQUE NOT NULL, description TEXT);
 CREATE TABLE role_permissions (role_id UUID REFERENCES roles(id) ON DELETE CASCADE, permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE, PRIMARY KEY(role_id, permission_id));
+CREATE TABLE user_roles (user_id UUID REFERENCES users(id) ON DELETE CASCADE, role_id UUID REFERENCES roles(id) ON DELETE CASCADE, PRIMARY KEY(user_id, role_id));
 
 -- Audit logs
 CREATE TABLE audit_logs (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID REFERENCES users(id), action TEXT NOT NULL, object_type TEXT, object_id UUID, payload JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());

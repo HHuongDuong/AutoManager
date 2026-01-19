@@ -18,7 +18,7 @@ jobs:
           node-version: '18'
       - name: Install backend deps
         working-directory: services/backend
-        run: npm ci
+        run: npm install
       - name: Run tests (health)
         working-directory: services/backend
         run: npm test

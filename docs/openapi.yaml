@@ -422,6 +422,102 @@ paths:
         '200':
           description: User object
 
+  /users/{user_id}/status:
+    patch:
+      summary: Update user active status
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated user status
+
+  /employees:
+    get:
+      summary: List employees
+      responses:
+        '200':
+          description: Employee list
+    post:
+      summary: Create employee (user + profile)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                branch_id:
+                  type: string
+                  format: uuid
+                full_name:
+                  type: string
+                phone:
+                  type: string
+                position:
+                  type: string
+      responses:
+        '201':
+          description: Employee created
+
+  /employees/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get employee by id
+      responses:
+        '200':
+          description: Employee
+    patch:
+      summary: Update employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch_id:
+                  type: string
+                  format: uuid
+                full_name:
+                  type: string
+                phone:
+                  type: string
+                position:
+                  type: string
+      responses:
+        '200':
+          description: Updated employee
+    delete:
+      summary: Delete employee
+      responses:
+        '200':
+          description: Deleted
+
 tags:
   - name: auth
   - name: orders

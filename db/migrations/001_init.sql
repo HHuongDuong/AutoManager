@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS permissions (
   description TEXT
 );
 
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY(user_id, role_id)
+);
+
 CREATE TABLE IF NOT EXISTS role_permissions (
   role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
   permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
@@ -188,6 +194,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   key TEXT UNIQUE NOT NULL,
   user_id UUID REFERENCES users(id),
+  order_id UUID REFERENCES orders(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   expires_at TIMESTAMP WITH TIME ZONE
 );

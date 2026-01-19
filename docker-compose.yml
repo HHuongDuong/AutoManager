@@ -15,6 +15,8 @@ services:
     build: ./services/backend
     environment:
       DATABASE_URL: postgres://automanager:secret@db:5432/automanager
+      JWT_SECRET: dev-secret
+      RBAC_BYPASS: "true"
     ports:
       - "3000:3000"
     depends_on:

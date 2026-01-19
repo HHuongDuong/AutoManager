@@ -76,6 +76,32 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
 - PATCH /users/{id}
 - Endpoints require RBAC; audit logs created for CRUD ops.
 
+## Employees
+
+- GET /employees
+  - Requires permission: `EMPLOYEE_VIEW`
+  - Response: list of employees with linked user info
+
+- GET /employees/{id}
+  - Requires permission: `EMPLOYEE_VIEW`
+  - Response: employee detail
+
+- POST /employees
+  - Requires permission: `EMPLOYEE_MANAGE`
+  - Body: { "username": "string", "password": "string", "branch_id": "uuid", "full_name": "string", "phone": "string", "position": "string" }
+  - Creates user + employee profile
+
+- PATCH /employees/{id}
+  - Requires permission: `EMPLOYEE_MANAGE`
+  - Body: { "full_name": "string", "phone": "string", "position": "string", "branch_id": "uuid" }
+
+- DELETE /employees/{id}
+  - Requires permission: `EMPLOYEE_MANAGE`
+
+- PATCH /users/{id}/status
+  - Requires permission: `EMPLOYEE_MANAGE`
+  - Body: { "is_active": true|false }
+
 ## Sync-specific contract details
 
 - Idempotency
