@@ -1,0 +1,430 @@
+openapi: 3.0.3
+info:
+  title: AutoManager POS API
+  version: "1.0.0"
+  description: OpenAPI definition for AutoManager POS (core endpoints)
+servers:
+  - url: https://api.example.com
+    description: Primary server (replace with real URL)
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Idempotency-Key:
+      name: Idempotency-Key
+      in: header
+      description: Client-generated idempotency key for create operations
+      required: false
+      schema:
+        type: string
+  schemas:
+    Error:
+      type: object
+      properties:
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+    AuthRequest:
+      type: object
+      required: [username,password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        expires_in:
+          type: integer
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          format: float
+    OrderItem:
+      type: object
+      required: [product_id,quantity,unit_price]
+      properties:
+        id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+          format: float
+        subtotal:
+          type: number
+    Payment:
+      type: object
+      required: [amount,payment_method]
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: float
+        payment_method:
+          type: string
+          enum: [CASH, CARD, QR, WALLET, OTHER]
+        provider_metadata:
+          type: object
+    OrderCreate:
+      type: object
+      required: [branch_id,order_type,items]
+      properties:
+        client_id:
+          type: string
+          description: local temporary id from client
+        branch_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        order_type:
+          type: string
+          enum: [DINE_IN, TAKEAWAY]
+        table_id:
+          type: string
+          format: uuid
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        metadata:
+          type: object
+    OrderResponse:
+      allOf:
+        - $ref: '#/components/schemas/OrderCreate'
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            order_code:
+              type: string
+            order_status:
+              type: string
+            payment_status:
+              type: string
+            total_amount:
+              type: number
+              format: float
+            created_at:
+              type: string
+              format: date-time
+    OrdersBatchRequest:
+      type: object
+      properties:
+        client_id:
+          type: string
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderCreate'
+    OrdersBatchResponseItem:
+      type: object
+      properties:
+        client_id:
+          type: string
+        server_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [created,conflict,error]
+        error:
+          type: object
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate and obtain JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequest'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Bad request
+  /orders:
+    post:
+      summary: Create an order
+      parameters:
+        - $ref: '#/components/parameters/Idempotency-Key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreate'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '200':
+          description: Duplicate idempotent submission — existing order returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      summary: List orders (basic)
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrderResponse'
+
+  /orders/batch-sync:
+    post:
+      summary: Batch sync orders from Sync Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdersBatchRequest'
+      responses:
+        '200':
+          description: Batch sync result
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrdersBatchResponseItem'
+
+  /orders/{order_id}:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get order by id
+      responses:
+        '200':
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '404':
+          description: Not found
+    patch:
+      summary: Update order (partial)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '409':
+          description: Conflict
+
+  /orders/{order_id}/payments:
+    post:
+      summary: Create payment for an order
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Payment'
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          description: Validation error
+
+  /products:
+    get:
+      summary: List products (optionally by branch)
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+
+  /inventory/transactions:
+    get:
+      summary: List inventory transactions
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List
+    post:
+      summary: Create inventory transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch_id:
+                  type: string
+                  format: uuid
+                ingredient_id:
+                  type: string
+                  format: uuid
+                order_id:
+                  type: string
+                  format: uuid
+                quantity:
+                  type: number
+                transaction_type:
+                  type: string
+                  enum: [IN, OUT, ADJUST]
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Created
+
+  /users:
+    post:
+      summary: Create user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Created
+
+  /users/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get user
+      responses:
+        '200':
+          description: User object
+
+tags:
+  - name: auth
+  - name: orders
+  - name: products
+  - name: inventory
+  - name: users

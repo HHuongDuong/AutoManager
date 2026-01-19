@@ -1,0 +1,13 @@
+{
+  "name": "automanager-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/index.js",
+    "health": "node src/health_check.js",
+    "test": "node -e \"console.log('ok')\""
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.log
+/.vscode/
+/.idea/
+coverage/
+db/*.sqlite
+__pycache__/
