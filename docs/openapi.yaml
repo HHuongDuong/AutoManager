@@ -801,6 +801,47 @@ paths:
                     total_hours:
                       type: number
 
+  /ai/forecast:
+    post:
+      summary: Forecast demand (moving average)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [series]
+              properties:
+                series:
+                  type: array
+                  items:
+                    type: number
+                horizon:
+                  type: integer
+                method:
+                  type: string
+                  enum: [moving_average]
+                window:
+                  type: integer
+      responses:
+        '200':
+          description: Forecast output
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  method:
+                    type: string
+                  horizon:
+                    type: integer
+                  window:
+                    type: integer
+                  forecast:
+                    type: array
+                    items:
+                      type: number
+
   /users:
     post:
       summary: Create user (admin)

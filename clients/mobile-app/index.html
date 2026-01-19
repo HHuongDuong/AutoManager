@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AutoManager Mobile</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">AutoManager Mobile</div>
+    <div class="status" id="status">On Duty</div>
+  </header>
+
+  <main class="content">
+    <section class="card">
+      <h2>Shift</h2>
+      <p>Today: 08:00 - 16:00</p>
+      <button id="toggleShift" class="primary">Check-out</button>
+    </section>
+
+    <section class="card">
+      <h2>My Tasks</h2>
+      <ul id="tasks">
+        <li>Prepare table 3</li>
+        <li>Deliver order ORD-002</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Quick Actions</h2>
+      <div class="actions">
+        <button>Check-in</button>
+        <button>Check-out</button>
+        <button>Request Help</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

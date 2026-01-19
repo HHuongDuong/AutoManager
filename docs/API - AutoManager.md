@@ -148,6 +148,13 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - RBAC: `REPORT_VIEW`
   - Returns total hours by employee
 
+## AI (optional)
+
+- POST /ai/forecast
+  - RBAC: `AI_USE`
+  - Body: { "series": [1,2,3], "horizon": 7, "method": "moving_average", "window": 7 }
+  - Response: { "forecast": [..], "method": "moving_average" }
+
 ## Users / Staff
 
 - GET /users/{id}

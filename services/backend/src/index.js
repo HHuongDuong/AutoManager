@@ -1,10 +1,12 @@
 const express = require('express');
+const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
 const db = require('./db');
 const { signToken, authenticate, requirePermission } = require('./auth');
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -624,6 +626,27 @@ app.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), a
     params
   );
   return res.json(result.rows);
+});
+
+// AI (optional) - simple demand forecast
+app.post('/ai/forecast', authenticate, requirePermission('AI_USE'), async (req, res) => {
+  const { series = [], horizon = 7, method = 'moving_average', window = 7 } = req.body || {};
+  if (!Array.isArray(series) || series.length === 0) return res.status(400).json({ error: 'series_required' });
+  const w = Math.max(1, Number(window || 7));
+  const n = Math.max(1, Number(horizon || 7));
+  let forecast = [];
+  if (method === 'moving_average') {
+    for (let i = 0; i < n; i++) {
+      const slice = series.slice(Math.max(0, series.length - w));
+      const avg = slice.reduce((s, v) => s + Number(v || 0), 0) / slice.length;
+      forecast.push(Number(avg.toFixed(2)));
+      series.push(avg);
+    }
+  } else {
+    return res.status(400).json({ error: 'unsupported_method' });
+  }
+  await writeAuditLog(req.user.sub, 'AI_FORECAST', 'ai', null, { method, horizon: n, window: w });
+  return res.json({ method, horizon: n, window: w, forecast });
 });
 
 const port = process.env.PORT || 3000;
