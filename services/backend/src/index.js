@@ -4,12 +4,18 @@ const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
 const db = require('./db');
 const { signToken, authenticate, requirePermission } = require('./auth');
+const { redisPing, redisGet, redisSet } = require('./infra/redis');
+const { rabbitPing, publish } = require('./infra/rabbit');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', async (req, res) => {
+  const redis = await redisPing();
+  const rabbit = await rabbitPing();
+  res.json({ status: 'ok', redis, rabbit });
+});
 
 async function getUserRoles(userId) {
   const result = await db.query(
@@ -208,6 +214,11 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), async (req
 
     await writeAuditLog(req.user.sub, 'ORDER_CREATE', 'order', orderId, { branch_id, order_type });
     await client.query('COMMIT');
+    try {
+      await publish('orders.created', { order_id: orderId, branch_id, order_type, created_at: new Date().toISOString() });
+    } catch (err) {
+      // ignore queue errors for now
+    }
     const order = await getOrderById(orderId);
     return res.status(201).json(order);
   } catch (err) {
@@ -506,7 +517,11 @@ app.get('/products', authenticate, requirePermission('PRODUCT_VIEW'), async (req
   if (category_id) { params.push(category_id); filters.push(`category_id = $${params.length}`); }
   if (q) { params.push(`%${q}%`); filters.push(`name ILIKE $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const cacheKey = `products:${branch_id || 'all'}:${category_id || 'all'}:${q || ''}`;
+  const cached = await redisGet(cacheKey);
+  if (cached) return res.json(JSON.parse(cached));
   const result = await db.query(`SELECT id, branch_id, category_id, sku, name, price, metadata FROM products ${where} ORDER BY name`, params);
+  await redisSet(cacheKey, JSON.stringify(result.rows), 60);
   return res.json(result.rows);
 });
 

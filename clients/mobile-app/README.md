@@ -1,15 +1,22 @@
-# Mobile App UI (Static)
+# AutoManager Mobile App (React Native / Expo)
 
-Open index.html in a browser to preview the mobile UI layout.
+Ứng dụng mobile theo định hướng React Native (Expo).
 
-Includes:
-- Shift selection
-- Check-in / Check-out
-- Task list
-- Quick actions
-- POS ordering (product list, cart, DINE_IN/TAKEAWAY)
-- Payment modal (cash)
+## Cài đặt
 
-Backend connection:
-- Use the login modal to obtain a token from `/auth/login`.
-- API base can be set in the login modal (default http://localhost:3000).
+```bash
+npm install
+```
+
+## Chạy phát triển
+
+```bash
+npm run start
+```
+
+## Cấu hình nhanh
+
+- API Base: mặc định http://localhost:3000
+- Cần `branch_id` để tạo đơn.
+- Check-in/Check-out cần `employee_id` và `shift_id`.
+- Đăng nhập qua `/auth/login` để lấy token.

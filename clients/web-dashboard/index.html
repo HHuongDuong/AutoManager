@@ -1,93 +1,13 @@
 <!doctype html>
 <html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AutoManager Dashboard</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand">AutoManager Dashboard</div>
-    <div class="meta">Manager • Branch Demo</div>
-  </header>
-
-  <div class="modal" id="loginModal">
-    <div class="modal-content">
-      <h3>Login</h3>
-      <label>Username</label>
-      <input type="text" id="loginUser" placeholder="username" />
-      <label>Password</label>
-      <input type="password" id="loginPass" placeholder="password" />
-      <label>API Base</label>
-      <input type="text" id="apiBase" placeholder="http://localhost:3000" />
-      <div class="actions">
-        <button id="loginBtn" class="primary">Login</button>
-      </div>
-      <div id="loginError" class="error"></div>
-    </div>
-  </div>
-
-  <div class="layout">
-    <aside class="nav">
-      <button class="active" data-tab="overview">Overview</button>
-      <button data-tab="sales">Sales</button>
-      <button data-tab="inventory">Inventory</button>
-      <button data-tab="staff">Staff</button>
-      <button data-tab="audit">Audit Logs</button>
-    </aside>
-
-    <main class="content">
-      <section id="overview" class="tab active">
-        <div class="kpis">
-          <div class="card"><div class="label">Revenue</div><div class="value" id="kpiRevenue">0</div></div>
-          <div class="card"><div class="label">Orders</div><div class="value" id="kpiOrders">0</div></div>
-          <div class="card"><div class="label">Avg Ticket</div><div class="value" id="kpiAvg">0</div></div>
-        </div>
-        <div class="chart">Revenue (placeholder chart)</div>
-      </section>
-
-      <section id="sales" class="tab">
-        <h2>Sales</h2>
-        <table>
-          <thead><tr><th>Order</th><th>Type</th><th>Total</th><th>Status</th></tr></thead>
-          <tbody id="salesTable"></tbody>
-        </table>
-      </section>
-
-      <section id="inventory" class="tab">
-        <h2>Inventory</h2>
-        <div class="inventory-actions">
-          <button id="openReceipt" class="primary">New Receipt</button>
-          <button id="openIssue">New Issue</button>
-          <button id="openAdjust">New Adjustment</button>
-          <button id="openSuggest">AI Suggest</button>
-        </div>
-        <table>
-          <thead><tr><th>Ingredient</th><th>IN</th><th>OUT</th><th>ADJUST</th></tr></thead>
-          <tbody id="invTable"></tbody>
-        </table>
-        <div class="card" id="suggestBox" style="margin-top:12px;display:none"></div>
-      </section>
-
-      <section id="staff" class="tab">
-        <h2>Staff</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Role</th><th>Hours</th></tr></thead>
-          <tbody id="staffTable"></tbody>
-        </table>
-      </section>
-
-      <section id="audit" class="tab">
-        <h2>Audit Logs</h2>
-        <table>
-          <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Object</th></tr></thead>
-          <tbody id="auditTable"></tbody>
-        </table>
-      </section>
-    </main>
-  </div>
-
-  <script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoManager Web Dashboard</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
+  </header>

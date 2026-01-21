@@ -1,15 +1,33 @@
-# POS Desktop UI (Static)
+# AutoManager POS Desktop (Electron + React)
 
-Open index.html in a browser to preview the POS Desktop UI.
+Ứng dụng POS desktop theo định hướng Electron + React.
 
-Features:
-- Product browsing and cart
-- DINE_IN/TAKEAWAY selection
-- Payment modal
-- Offline queue simulation
+## Cài đặt
 
-Backend connection:
-- Use the login modal to obtain a token from `/auth/login`.
-- API base can be set in the login modal (default http://localhost:3000).
+```bash
+npm install
+```
 
-This is a static UI that can be wrapped into Electron later.
+## Chạy phát triển
+
+```bash
+npm run dev
+```
+
+## Build giao diện
+
+```bash
+npm run build
+```
+
+## Chạy bản production (electron)
+
+```bash
+npm run start
+```
+
+## Cấu hình nhanh
+
+- API Base: mặc định http://localhost:3000
+- `branch_id` bắt buộc khi tạo đơn.
+- Đăng nhập qua `/auth/login` để lấy token.

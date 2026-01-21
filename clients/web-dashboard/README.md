@@ -1,20 +1,26 @@
-# Web Dashboard UI (Static)
+# AutoManager Web Dashboard (React)
 
-Open index.html in a browser to preview the web dashboard.
+Ứng dụng dashboard theo định hướng React (Vite).
 
-Includes:
-- KPI cards
-- Sales table
-- Inventory table
-- Staff table
-- Audit logs tab
+## Cài đặt
 
-Inventory vouchers:
-- Use “New Receipt/Issue/Adjustment” buttons (prompts for IDs)
+```bash
+npm install
+```
 
-AI suggest:
-- Use “AI Suggest” button in Inventory tab (prompts for series/on-hand)
+## Chạy phát triển
 
-Backend connection:
-- Use the login modal to obtain a token from `/auth/login`.
-- API base can be set in the login modal (default http://localhost:3000).
+```bash
+npm run dev
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+## Cấu hình nhanh
+
+- API Base: mặc định http://localhost:3000
+- Dùng tài khoản `/auth/login` để lấy token.

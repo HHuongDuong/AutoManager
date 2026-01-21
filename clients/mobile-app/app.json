@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "AutoManager Mobile",
+    "slug": "automanager-mobile",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "entryPoint": "./app.js",
+    "splash": {
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"]
+  }
+}

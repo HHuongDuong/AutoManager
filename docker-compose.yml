@@ -17,10 +17,25 @@ services:
       DATABASE_URL: postgres://automanager:secret@db:5432/automanager
       JWT_SECRET: dev-secret
       RBAC_BYPASS: "true"
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
     ports:
       - "3000:3000"
     depends_on:
       - db
+      - redis
+      - rabbitmq
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
 
 volumes:
   db_data:
