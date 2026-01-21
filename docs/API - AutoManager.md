@@ -121,6 +121,18 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - Body: { "branch_id": "uuid", "ingredient_id": "uuid", "order_id": "uuid|null", "quantity": 1.0, "transaction_type": "IN|OUT|ADJUST", "reason": "string" }
   - RBAC: `INVENTORY_MANAGE`
 
+- POST /inventory/receipts
+  - RBAC: `INVENTORY_MANAGE`
+  - Body: { "branch_id": "uuid", "reason": "string", "items": [{"ingredient_id":"uuid","quantity":1,"unit_cost":10}] }
+
+- POST /inventory/issues
+  - RBAC: `INVENTORY_MANAGE`
+  - Body: { "branch_id": "uuid", "reason": "string", "items": [{"ingredient_id":"uuid","quantity":1}] }
+
+- POST /inventory/adjustments
+  - RBAC: `INVENTORY_MANAGE`
+  - Body: { "branch_id": "uuid", "reason": "string", "items": [{"ingredient_id":"uuid","quantity":-1}] }
+
 - GET /ingredients
   - RBAC: `INVENTORY_VIEW`
 
@@ -155,6 +167,11 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - Body: { "series": [1,2,3], "horizon": 7, "method": "moving_average", "window": 7 }
   - Response: { "forecast": [..], "method": "moving_average" }
 
+- POST /ai/suggest-reorder
+  - RBAC: `AI_USE`
+  - Body: { "branch_id": "uuid", "items": [{"ingredient_id":"uuid","on_hand":10,"series":[5,6,7]}] }
+  - Response: suggested reorder quantities per ingredient
+
 ## Users / Staff
 
 - GET /users/{id}
@@ -187,6 +204,47 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
 - PATCH /users/{id}/status
   - Requires permission: `EMPLOYEE_MANAGE`
   - Body: { "is_active": true|false }
+
+## Attendance & Shifts
+
+- GET /shifts
+  - RBAC: `ATTENDANCE_VIEW`
+
+- POST /shifts
+  - RBAC: `ATTENDANCE_MANAGE`
+  - Body: { "name": "string", "start_time": "HH:MM", "end_time": "HH:MM" }
+
+- POST /attendance/checkin
+  - RBAC: `ATTENDANCE_MANAGE`
+  - Body: { "employee_id": "uuid", "shift_id": "uuid" }
+
+- POST /attendance/checkout
+  - RBAC: `ATTENDANCE_MANAGE`
+  - Body: { "employee_id": "uuid" }
+
+## Tables (Quản lý bàn)
+
+- GET /tables?branch_id=
+  - RBAC: `TABLE_VIEW`
+
+- POST /tables
+  - RBAC: `TABLE_MANAGE`
+  - Body: { "branch_id": "uuid", "name": "Table 1", "status": "AVAILABLE|OCCUPIED" }
+
+- PATCH /tables/{id}
+  - RBAC: `TABLE_MANAGE`
+
+- DELETE /tables/{id}
+  - RBAC: `TABLE_MANAGE`
+
+- PATCH /tables/{id}/status
+  - RBAC: `TABLE_MANAGE`
+  - Body: { "status": "AVAILABLE|OCCUPIED" }
+
+## Audit logs
+
+- GET /audit-logs?user_id=&action=&from=&to=&limit=
+  - RBAC: `AUDIT_VIEW`
 
 ## Sync-specific contract details
 

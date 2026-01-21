@@ -1,4 +1,4 @@
-const API_BASE = localStorage.getItem('API_BASE') || 'http://localhost:3000';
+const API_BASE_DEFAULT = localStorage.getItem('API_BASE') || 'http://localhost:3000';
 const getToken = () => localStorage.getItem('ACCESS_TOKEN');
 const categories = ['All','Coffee','Tea','Food'];
 const products = [
@@ -84,6 +84,7 @@ async function createQueuedOrder(){
     table_id: orderType==='DINE_IN' ? tableSelect.value || null : null,
     items: cart.map(i=>({ product_id: i.id, name: i.name, quantity: i.qty, unit_price: i.price }))
   };
+  const API_BASE = localStorage.getItem('API_BASE') || API_BASE_DEFAULT;
   if(online && getToken()){
     try{
       const res = await fetch(`${API_BASE}/orders`,{
@@ -149,6 +150,35 @@ document.getElementById('takeaway').onclick = ()=>{
   document.getElementById('dineIn').classList.remove('active');
   tableSelect.value='';
 };
+
+async function login(){
+  const user = document.getElementById('loginUser').value;
+  const pass = document.getElementById('loginPass').value;
+  const apiBase = document.getElementById('apiBase').value || API_BASE_DEFAULT;
+  localStorage.setItem('API_BASE', apiBase);
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try{
+    const res = await fetch(`${apiBase}/auth/login`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    if(!res.ok) throw new Error('login_failed');
+    const data = await res.json();
+    localStorage.setItem('ACCESS_TOKEN', data.access_token);
+    document.getElementById('loginModal').classList.add('hidden');
+  }catch(e){
+    errEl.textContent = 'Login failed';
+  }
+}
+
+document.getElementById('loginBtn').onclick = login;
+document.getElementById('apiBase').value = API_BASE_DEFAULT;
+
+if(getToken()){
+  document.getElementById('loginModal').classList.add('hidden');
+}
 
 renderCategories();
 renderProducts();

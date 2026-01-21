@@ -15,3 +15,8 @@ table{width:100%;background:#fff;border-radius:8px;border-collapse:collapse}
 th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left}
 .tab{display:none}
 .tab.active{display:block}
+.inventory-actions{display:flex;gap:8px;margin-bottom:8px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+.modal.hidden{display:none}
+.modal-content{background:#fff;padding:20px;border-radius:8px;width:320px}
+.error{color:#ef4444;margin-top:8px}

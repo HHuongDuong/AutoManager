@@ -71,7 +71,9 @@ app.post('/auth/login', async (req, res) => {
 });
 
 app.get('/me', authenticate, async (req, res) => {
-  return res.json({ user_id: req.user.sub, roles: req.user.roles, permissions: req.user.permissions });
+  const empRes = await db.query('SELECT id, branch_id, full_name FROM employees WHERE user_id = $1', [req.user.sub]);
+  const employee = empRes.rows[0] || null;
+  return res.json({ user_id: req.user.sub, employee, roles: req.user.roles, permissions: req.user.permissions });
 });
 
 async function writeAuditLog(userId, action, objectType, objectId, payload) {
@@ -174,6 +176,9 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), async (req
       'INSERT INTO orders (id, branch_id, client_id, created_by, order_type, table_id, total_amount, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
       [orderId, branch_id, client_id || null, created_by || null, order_type, table_id || null, total, metadata || null]
     );
+    if (order_type === 'DINE_IN' && table_id) {
+      await client.query('UPDATE tables SET status = \"OCCUPIED\" WHERE id = $1', [table_id]);
+    }
 
     for (const item of items) {
       const itemId = randomUUID();
@@ -331,12 +336,77 @@ app.post('/orders/:id/payments', authenticate, requirePermission('ORDERS_PAY'), 
 });
 
 app.post('/orders/:id/close', authenticate, requirePermission('ORDERS_UPDATE'), async (req, res) => {
-  const orderRes = await db.query('SELECT payment_status FROM orders WHERE id = $1', [req.params.id]);
+  const orderRes = await db.query('SELECT payment_status, table_id FROM orders WHERE id = $1', [req.params.id]);
   if (orderRes.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   if (orderRes.rows[0].payment_status !== 'PAID') return res.status(409).json({ error: 'payment_required' });
   await db.query('UPDATE orders SET order_status = \"CLOSED\", updated_at = now() WHERE id = $1', [req.params.id]);
+  if (orderRes.rows[0].table_id) {
+    await db.query('UPDATE tables SET status = \"AVAILABLE\" WHERE id = $1', [orderRes.rows[0].table_id]);
+  }
   await writeAuditLog(req.user.sub, 'ORDER_CLOSE', 'order', req.params.id, {});
   return res.json({ closed: true });
+});
+
+// Tables management
+app.get('/tables', authenticate, requirePermission('TABLE_VIEW'), async (req, res) => {
+  const { branch_id } = req.query || {};
+  const params = [];
+  const where = branch_id ? (params.push(branch_id), `WHERE branch_id = $1`) : '';
+  const result = await db.query(`SELECT id, branch_id, name, status FROM tables ${where} ORDER BY name`, params);
+  return res.json(result.rows);
+});
+
+app.post('/tables', authenticate, requirePermission('TABLE_MANAGE'), async (req, res) => {
+  const { branch_id, name, status } = req.body || {};
+  if (!branch_id || !name) return res.status(400).json({ error: 'branch_id_name_required' });
+  const result = await db.query(
+    'INSERT INTO tables (id, branch_id, name, status) VALUES ($1, $2, $3, $4) RETURNING id, branch_id, name, status',
+    [randomUUID(), branch_id, name, status || 'AVAILABLE']
+  );
+  await writeAuditLog(req.user.sub, 'TABLE_CREATE', 'table', result.rows[0].id, { name, branch_id });
+  return res.status(201).json(result.rows[0]);
+});
+
+app.patch('/tables/:id', authenticate, requirePermission('TABLE_MANAGE'), async (req, res) => {
+  const { name, status } = req.body || {};
+  const result = await db.query(
+    'UPDATE tables SET name = COALESCE($2, name), status = COALESCE($3, status) WHERE id = $1 RETURNING id, branch_id, name, status',
+    [req.params.id, name ?? null, status ?? null]
+  );
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req.user.sub, 'TABLE_UPDATE', 'table', req.params.id, req.body);
+  return res.json(result.rows[0]);
+});
+
+app.delete('/tables/:id', authenticate, requirePermission('TABLE_MANAGE'), async (req, res) => {
+  const result = await db.query('DELETE FROM tables WHERE id = $1 RETURNING id', [req.params.id]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req.user.sub, 'TABLE_DELETE', 'table', req.params.id, {});
+  return res.json({ deleted: true });
+});
+
+app.patch('/tables/:id/status', authenticate, requirePermission('TABLE_MANAGE'), async (req, res) => {
+  const { status } = req.body || {};
+  if (!status) return res.status(400).json({ error: 'status_required' });
+  const result = await db.query('UPDATE tables SET status = $2 WHERE id = $1 RETURNING id, branch_id, name, status', [req.params.id, status]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req.user.sub, 'TABLE_STATUS_UPDATE', 'table', req.params.id, { status });
+  return res.json(result.rows[0]);
+});
+
+// Audit log viewer
+app.get('/audit-logs', authenticate, requirePermission('AUDIT_VIEW'), async (req, res) => {
+  const { user_id, action, from, to, limit = 100 } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (user_id) { params.push(user_id); filters.push(`user_id = $${params.length}`); }
+  if (action) { params.push(action); filters.push(`action = $${params.length}`); }
+  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  params.push(Number(limit));
+  const result = await db.query(`SELECT id, user_id, action, object_type, object_id, payload, created_at FROM audit_logs ${where} ORDER BY created_at DESC LIMIT $${params.length}`, params);
+  return res.json(result.rows);
 });
 
 // Employee management (CRUD)
@@ -554,16 +624,95 @@ app.get('/inventory/transactions', authenticate, requirePermission('INVENTORY_VI
 });
 
 app.post('/inventory/transactions', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
-  const { branch_id, ingredient_id, order_id, quantity, transaction_type, reason } = req.body || {};
+  const { branch_id, ingredient_id, order_id, quantity, transaction_type, reason, unit_cost } = req.body || {};
   if (!branch_id || !ingredient_id || !transaction_type) return res.status(400).json({ error: 'branch_ingredient_type_required' });
   const qty = Number(quantity || 0);
   if (qty === 0) return res.status(400).json({ error: 'quantity_required' });
   const result = await db.query(
-    'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, order_id, quantity, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, branch_id, ingredient_id, order_id, quantity, transaction_type, reason, created_at',
-    [randomUUID(), branch_id, ingredient_id, order_id || null, qty, transaction_type, reason || null, req.user.sub]
+    'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, order_id, quantity, unit_cost, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, branch_id, ingredient_id, order_id, quantity, unit_cost, transaction_type, reason, created_at',
+    [randomUUID(), branch_id, ingredient_id, order_id || null, qty, unit_cost || null, transaction_type, reason || null, req.user.sub]
   );
   await writeAuditLog(req.user.sub, 'INVENTORY_TX_CREATE', 'inventory_transaction', result.rows[0].id, { branch_id, ingredient_id, transaction_type, quantity: qty });
   return res.status(201).json(result.rows[0]);
+});
+
+// Inventory voucher endpoints
+app.post('/inventory/receipts', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { branch_id, items = [], reason } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const item of items) {
+      const qty = Number(item.quantity || 0);
+      if (!item.ingredient_id || qty === 0) continue;
+      const row = await client.query(
+        'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, quantity, unit_cost, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, ingredient_id, quantity, unit_cost, transaction_type',
+        [randomUUID(), branch_id, item.ingredient_id, qty, item.unit_cost || null, 'IN', reason || null, req.user.sub]
+      );
+      results.push(row.rows[0]);
+    }
+    await client.query('COMMIT');
+    return res.status(201).json({ created: results.length, items: results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'receipt_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/inventory/issues', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { branch_id, items = [], reason } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const item of items) {
+      const qty = Number(item.quantity || 0);
+      if (!item.ingredient_id || qty === 0) continue;
+      const row = await client.query(
+        'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, quantity, unit_cost, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, ingredient_id, quantity, unit_cost, transaction_type',
+        [randomUUID(), branch_id, item.ingredient_id, qty, item.unit_cost || null, 'OUT', reason || null, req.user.sub]
+      );
+      results.push(row.rows[0]);
+    }
+    await client.query('COMMIT');
+    return res.status(201).json({ created: results.length, items: results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'issue_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/inventory/adjustments', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { branch_id, items = [], reason } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const item of items) {
+      const qty = Number(item.quantity || 0);
+      if (!item.ingredient_id || qty === 0) continue;
+      const row = await client.query(
+        'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, quantity, unit_cost, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, ingredient_id, quantity, unit_cost, transaction_type',
+        [randomUUID(), branch_id, item.ingredient_id, qty, item.unit_cost || null, 'ADJUST', reason || null, req.user.sub]
+      );
+      results.push(row.rows[0]);
+    }
+    await client.query('COMMIT');
+    return res.status(201).json({ created: results.length, items: results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'adjustment_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 // Reports & analytics
@@ -628,6 +777,51 @@ app.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), a
   return res.json(result.rows);
 });
 
+// Shifts & Attendance
+app.get('/shifts', authenticate, requirePermission('ATTENDANCE_VIEW'), async (req, res) => {
+  const result = await db.query('SELECT id, name, start_time, end_time FROM shifts ORDER BY start_time');
+  return res.json(result.rows);
+});
+
+app.post('/shifts', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
+  const { name, start_time, end_time } = req.body || {};
+  if (!name || !start_time || !end_time) return res.status(400).json({ error: 'name_start_end_required' });
+  const result = await db.query(
+    'INSERT INTO shifts (id, name, start_time, end_time) VALUES ($1, $2, $3, $4) RETURNING id, name, start_time, end_time',
+    [randomUUID(), name, start_time, end_time]
+  );
+  await writeAuditLog(req.user.sub, 'SHIFT_CREATE', 'shift', result.rows[0].id, { name });
+  return res.status(201).json(result.rows[0]);
+});
+
+app.post('/attendance/checkin', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
+  const { employee_id, shift_id } = req.body || {};
+  if (!employee_id || !shift_id) return res.status(400).json({ error: 'employee_shift_required' });
+  const openRes = await db.query(
+    'SELECT id FROM attendance WHERE employee_id = $1 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1',
+    [employee_id]
+  );
+  if (openRes.rows.length > 0) return res.status(409).json({ error: 'already_checked_in' });
+  const result = await db.query(
+    'INSERT INTO attendance (id, employee_id, shift_id, check_in) VALUES ($1, $2, $3, now()) RETURNING id, employee_id, shift_id, check_in',
+    [randomUUID(), employee_id, shift_id]
+  );
+  await writeAuditLog(req.user.sub, 'ATTENDANCE_CHECKIN', 'attendance', result.rows[0].id, { employee_id, shift_id });
+  return res.status(201).json(result.rows[0]);
+});
+
+app.post('/attendance/checkout', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
+  const { employee_id } = req.body || {};
+  if (!employee_id) return res.status(400).json({ error: 'employee_required' });
+  const result = await db.query(
+    'UPDATE attendance SET check_out = now() WHERE employee_id = $1 AND check_out IS NULL RETURNING id, employee_id, shift_id, check_in, check_out',
+    [employee_id]
+  );
+  if (result.rows.length === 0) return res.status(409).json({ error: 'not_checked_in' });
+  await writeAuditLog(req.user.sub, 'ATTENDANCE_CHECKOUT', 'attendance', result.rows[0].id, { employee_id });
+  return res.json(result.rows[0]);
+});
+
 // AI (optional) - simple demand forecast
 app.post('/ai/forecast', authenticate, requirePermission('AI_USE'), async (req, res) => {
   const { series = [], horizon = 7, method = 'moving_average', window = 7 } = req.body || {};
@@ -647,6 +841,32 @@ app.post('/ai/forecast', authenticate, requirePermission('AI_USE'), async (req, 
   }
   await writeAuditLog(req.user.sub, 'AI_FORECAST', 'ai', null, { method, horizon: n, window: w });
   return res.json({ method, horizon: n, window: w, forecast });
+});
+
+// AI suggest reorder quantities (simple heuristic)
+app.post('/ai/suggest-reorder', authenticate, requirePermission('AI_USE'), async (req, res) => {
+  const { branch_id, items = [] } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+
+  const suggestions = items.map(i => {
+    const avg = (Array.isArray(i.series) && i.series.length)
+      ? i.series.reduce((s, v) => s + Number(v || 0), 0) / i.series.length
+      : 0;
+    const target = avg * 7; // next 7 days
+    const on_hand = Number(i.on_hand || 0);
+    const reorder_qty = Math.max(0, Math.round(target - on_hand));
+    return {
+      ingredient_id: i.ingredient_id,
+      on_hand,
+      avg_daily: Number(avg.toFixed(2)),
+      horizon_days: 7,
+      target_stock: Number(target.toFixed(2)),
+      reorder_qty
+    };
+  });
+
+  await writeAuditLog(req.user.sub, 'AI_REORDER_SUGGEST', 'ai', null, { branch_id, count: suggestions.length });
+  return res.json({ branch_id, suggestions });
 });
 
 const port = process.env.PORT || 3000;

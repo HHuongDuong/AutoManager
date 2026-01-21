@@ -182,6 +182,7 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
   ingredient_id UUID REFERENCES ingredients(id),
   order_id UUID REFERENCES orders(id),
   quantity NUMERIC(12,3) NOT NULL,
+  unit_cost NUMERIC(12,2),
   transaction_type TEXT NOT NULL,
   reason TEXT,
   created_by UUID REFERENCES users(id),
