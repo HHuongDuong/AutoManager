@@ -1,4 +1,7 @@
 const express = require('express');
+const http = require('http');
+const jwt = require('jsonwebtoken');
+const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
@@ -8,6 +11,8 @@ const { redisPing, redisGet, redisSet } = require('./infra/redis');
 const { rabbitPing, publish } = require('./infra/rabbit');
 const { issueInvoice } = require('./infra/einvoice');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -15,6 +20,45 @@ app.use((req, res, next) => {
   req.requestId = req.headers['x-request-id'] || randomUUID();
   res.setHeader('x-request-id', req.requestId);
   next();
+});
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+function publishRealtime(event, payload, branchId) {
+  const data = JSON.stringify({ event, branch_id: branchId || null, payload });
+  wss.clients.forEach(client => {
+    if (client.readyState !== 1) return;
+    if (client.allBranches) {
+      client.send(data);
+      return;
+    }
+    if (!branchId) {
+      client.send(data);
+      return;
+    }
+    if (client.branches?.includes(branchId)) client.send(data);
+  });
+}
+
+wss.on('connection', async (ws, req) => {
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    const token = url.searchParams.get('token');
+    const branchId = url.searchParams.get('branch_id');
+    if (!token) return ws.close(4401, 'unauthorized');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const permissions = decoded?.permissions || [];
+    const allowed = permissions.includes('RBAC_MANAGE') ? [] : await getAllowedBranchIds(decoded.sub);
+    if (!permissions.includes('RBAC_MANAGE') && allowed.length === 0) return ws.close(4403, 'forbidden');
+    if (branchId && !permissions.includes('RBAC_MANAGE') && !allowed.includes(branchId)) return ws.close(4403, 'forbidden');
+    ws.userId = decoded.sub;
+    ws.allBranches = permissions.includes('RBAC_MANAGE');
+    ws.branches = permissions.includes('RBAC_MANAGE') ? [] : allowed;
+    ws.send(JSON.stringify({ event: 'ws.connected', branch_id: branchId || null }));
+  } catch (err) {
+    ws.close(4401, 'unauthorized');
+  }
 });
 
 app.get('/health', async (req, res) => {
@@ -598,6 +642,7 @@ app.patch('/tables/:id/status', authenticate, requirePermission('TABLE_MANAGE'),
   const result = await db.query('UPDATE tables SET status = $2 WHERE id = $1 RETURNING id, branch_id, name, status', [req.params.id, status]);
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'TABLE_STATUS_UPDATE', 'table', req.params.id, { status });
+  publishRealtime('table.status', { id: req.params.id, status }, tableBranch);
   return res.json(result.rows[0]);
 });
 
@@ -876,6 +921,61 @@ app.delete('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'INGREDIENT_DELETE', 'ingredient', req.params.id, {});
   return res.json({ deleted: true });
+});
+
+// Inventory inputs - manage inbound materials
+app.get('/inventory/inputs', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
+  const { branch_id, ingredient_id, from, to } = req.query || {};
+  const params = [];
+  const filters = [`transaction_type = 'IN'`];
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`branch_id = ANY($${params.length})`);
+  }
+  if (ingredient_id) { params.push(ingredient_id); filters.push(`ingredient_id = $${params.length}`); }
+  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT id, branch_id, ingredient_id, quantity, unit_cost, (quantity * COALESCE(unit_cost, 0)) AS total_cost, reason, created_by, created_at
+     FROM inventory_transactions ${where} ORDER BY created_at DESC`,
+    params
+  );
+  return res.json(result.rows);
+});
+
+app.post('/inventory/inputs', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { branch_id, items = [], reason } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+  if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const item of items) {
+      const qty = Number(item.quantity || 0);
+      if (!item.ingredient_id || qty === 0) continue;
+      const row = await client.query(
+        'INSERT INTO inventory_transactions (id, branch_id, ingredient_id, quantity, unit_cost, transaction_type, reason, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, ingredient_id, quantity, unit_cost, transaction_type',
+        [randomUUID(), branch_id, item.ingredient_id, qty, item.unit_cost || null, 'IN', reason || null, req.user.sub]
+      );
+      results.push(row.rows[0]);
+    }
+    await client.query('COMMIT');
+    await writeAuditLog(req, 'INVENTORY_INPUT_CREATE', 'inventory_input', null, { branch_id, count: results.length });
+    return res.status(201).json({ created: results.length, items: results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'input_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 app.get('/inventory/transactions', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
@@ -1185,4 +1285,4 @@ app.post('/ai/suggest-reorder', authenticate, requirePermission('AI_USE'), async
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log('backend listening on', port));
+server.listen(port, () => console.log('backend listening on', port));

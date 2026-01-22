@@ -121,6 +121,15 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - Body: { "branch_id": "uuid", "ingredient_id": "uuid", "order_id": "uuid|null", "quantity": 1.0, "transaction_type": "IN|OUT|ADJUST", "reason": "string" }
   - RBAC: `INVENTORY_MANAGE`
 
+- GET /inventory/inputs?branch_id={id}&ingredient_id=&from=&to=
+  - Mục đích: danh sách nhập kho (IN) theo nguyên liệu
+  - RBAC: `INVENTORY_VIEW`
+
+- POST /inventory/inputs
+  - Mục đích: nhập kho nguyên liệu (không cần nhà cung cấp)
+  - RBAC: `INVENTORY_MANAGE`
+  - Body: { "branch_id": "uuid", "reason": "string", "items": [{"ingredient_id":"uuid","quantity":1,"unit_cost":10}] }
+
 - POST /inventory/receipts
   - RBAC: `INVENTORY_MANAGE`
   - Body: { "branch_id": "uuid", "reason": "string", "items": [{"ingredient_id":"uuid","quantity":1,"unit_cost":10}] }

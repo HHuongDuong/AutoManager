@@ -18,6 +18,11 @@ export default function App() {
   });
 
   const [products, setProducts] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
+  const [inventoryInputs, setInventoryInputs] = useState([]);
+  const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+  const [showInputModal, setShowInputModal] = useState(false);
+  const [wsStatus, setWsStatus] = useState('disconnected');
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
@@ -139,6 +144,91 @@ export default function App() {
     return () => controller.abort();
   }, [apiBase, branchId, search, token]);
 
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    const fetchIngredients = async () => {
+      try {
+        const res = await fetch(`${apiBase}/ingredients`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setIngredients(data);
+      } catch (err) {
+        setIngredients([]);
+      }
+    };
+    fetchIngredients();
+    return () => controller.abort();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    if (!token || !branchId) return;
+    const controller = new AbortController();
+    const fetchInputs = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('branch_id', branchId);
+        const res = await fetch(`${apiBase}/inventory/inputs?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setInventoryInputs(data);
+      } catch (err) {
+        setInventoryInputs([]);
+      }
+    };
+    fetchInputs();
+    return () => controller.abort();
+  }, [apiBase, branchId, token]);
+
+  const refreshInputs = async () => {
+    if (!token || !branchId) return;
+    try {
+      const params = new URLSearchParams();
+      params.set('branch_id', branchId);
+      const res = await fetch(`${apiBase}/inventory/inputs?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setInventoryInputs(data);
+    } catch {
+      setInventoryInputs([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshInputs();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const url = new URL(apiBase.replace('http', 'ws'));
+    url.pathname = '/ws';
+    url.searchParams.set('token', token);
+    if (branchId) url.searchParams.set('branch_id', branchId);
+    const ws = new WebSocket(url.toString());
+    setWsStatus('connecting');
+    ws.onopen = () => setWsStatus('connected');
+    ws.onclose = () => setWsStatus('disconnected');
+    ws.onerror = () => setWsStatus('error');
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data || '{}');
+        if (msg.event?.startsWith('inventory.input')) refreshInputs();
+        if (msg.event?.startsWith('order.')) setStatusMessage(`Realtime: ${msg.event}`);
+      } catch {
+        // ignore
+      }
+    };
+    return () => ws.close();
+  }, [apiBase, branchId, token]);
+
   const addToCart = (product) => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
@@ -225,6 +315,46 @@ export default function App() {
       clearOrder();
       setShowPayment(false);
       setStatusMessage('Không thể gửi ngay. Đã đưa vào hàng đợi.');
+    }
+  };
+
+  const handleCreateInput = async () => {
+    if (!branchId) {
+      setStatusMessage('Cần branch_id để nhập kho.');
+      return;
+    }
+    if (!inputForm.ingredient_id || !inputForm.quantity) {
+      setStatusMessage('Cần nguyên liệu và số lượng.');
+      return;
+    }
+    try {
+      const payload = {
+        branch_id: branchId,
+        reason: inputForm.reason || null,
+        items: [
+          {
+            ingredient_id: inputForm.ingredient_id,
+            quantity: Number(inputForm.quantity),
+            unit_cost: inputForm.unit_cost ? Number(inputForm.unit_cost) : null
+          }
+        ]
+      };
+      const res = await fetch(`${apiBase}/inventory/inputs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('input_failed');
+      const data = await res.json();
+      setInventoryInputs(prev => [...data.items, ...prev]);
+      setInputForm({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+      setShowInputModal(false);
+      setStatusMessage('Nhập kho thành công.');
+    } catch (err) {
+      setStatusMessage('Không thể nhập kho.');
     }
   };
 
@@ -323,10 +453,11 @@ export default function App() {
           </div>
           <div className="cart-actions">
             <button className="btn ghost" onClick={processQueue}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</button>
+            <button className="btn ghost" onClick={() => setShowInputModal(true)}>Nhập kho</button>
             <button className="btn primary" onClick={() => setShowPayment(true)} disabled={!cart.length}>Thanh toán</button>
           </div>
           {statusMessage && <div className="status">{statusMessage}</div>}
-          <div className="status">Trạng thái: {isOnline ? 'Online' : 'Offline'}</div>
+          <div className="status">Trạng thái: {isOnline ? 'Online' : 'Offline'} • WS: {wsStatus}</div>
         </aside>
       </main>
 
@@ -372,6 +503,75 @@ export default function App() {
             <footer>
               <button className="btn ghost" onClick={() => setShowPayment(false)}>Để sau</button>
               <button className="btn primary" onClick={handleCreateOrder}>Xác nhận</button>
+            </footer>
+          </div>
+        </section>
+      )}
+
+      {showInputModal && (
+        <section className="modal">
+          <div className="modal-card">
+            <header>
+              <h2>Nhập kho nguyên liệu</h2>
+              <button onClick={() => setShowInputModal(false)}>×</button>
+            </header>
+            <div className="modal-body">
+              <div className="summary">
+                <div className="form-row">
+                  <label>Nguyên liệu</label>
+                  <select
+                    value={inputForm.ingredient_id}
+                    onChange={(e) => setInputForm({ ...inputForm, ingredient_id: e.target.value })}
+                  >
+                    <option value="">Chọn nguyên liệu</option>
+                    {ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng</label>
+                  <input
+                    type="number"
+                    value={inputForm.quantity}
+                    onChange={(e) => setInputForm({ ...inputForm, quantity: e.target.value })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Đơn giá</label>
+                  <input
+                    type="number"
+                    value={inputForm.unit_cost}
+                    onChange={(e) => setInputForm({ ...inputForm, unit_cost: e.target.value })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input
+                    value={inputForm.reason}
+                    onChange={(e) => setInputForm({ ...inputForm, reason: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="methods">
+                <h4>Phiếu nhập gần đây</h4>
+                <div className="cart-list">
+                  {inventoryInputs.slice(0, 6).map(input => (
+                    <div key={input.id} className="cart-item">
+                      <div>
+                        <h4>{input.ingredient_id}</h4>
+                        <span>{input.quantity} • {formatVnd(input.unit_cost || 0)}</span>
+                      </div>
+                      <strong>{formatVnd(input.total_cost || 0)}</strong>
+                    </div>
+                  ))}
+                  {inventoryInputs.length === 0 && <div className="empty">Chưa có phiếu nhập.</div>}
+                </div>
+              </div>
+            </div>
+            <footer>
+              <button className="btn ghost" onClick={() => setShowInputModal(false)}>Đóng</button>
+              <button className="btn primary" onClick={handleCreateInput}>Tạo phiếu nhập</button>
             </footer>
           </div>
         </section>

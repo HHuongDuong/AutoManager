@@ -25,6 +25,10 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [orderQueue, setOrderQueue] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
+  const [inventoryInputs, setInventoryInputs] = useState([]);
+  const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+  const [wsStatus, setWsStatus] = useState('disconnected');
 
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
@@ -82,6 +86,83 @@ export default function App() {
     };
     fetchProducts();
   }, [apiBase, branchId, search, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const fetchIngredients = async () => {
+      try {
+        const res = await fetch(`${apiBase}/ingredients`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setIngredients(data);
+      } catch (err) {
+        setIngredients([]);
+      }
+    };
+    fetchIngredients();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    if (!token || !branchId) return;
+    const fetchInputs = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('branch_id', branchId);
+        const res = await fetch(`${apiBase}/inventory/inputs?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setInventoryInputs(data);
+      } catch (err) {
+        setInventoryInputs([]);
+      }
+    };
+    fetchInputs();
+  }, [apiBase, branchId, token]);
+
+  const refreshInputs = async () => {
+    if (!token || !branchId) return;
+    try {
+      const params = new URLSearchParams();
+      params.set('branch_id', branchId);
+      const res = await fetch(`${apiBase}/inventory/inputs?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setInventoryInputs(data);
+    } catch {
+      setInventoryInputs([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshInputs();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const wsUrl = apiBase.replace('https', 'wss').replace('http', 'ws');
+    const url = `${wsUrl}/ws?token=${encodeURIComponent(token)}${branchId ? `&branch_id=${encodeURIComponent(branchId)}` : ''}`;
+    const ws = new WebSocket(url);
+    setWsStatus('connecting');
+    ws.onopen = () => setWsStatus('connected');
+    ws.onclose = () => setWsStatus('disconnected');
+    ws.onerror = () => setWsStatus('error');
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data || '{}');
+        if (msg.event?.startsWith('inventory.input')) refreshInputs();
+        if (msg.event?.startsWith('order.')) setStatusMessage(`Realtime: ${msg.event}`);
+      } catch {
+        // ignore
+      }
+    };
+    return () => ws.close();
+  }, [apiBase, branchId, token]);
 
   const persistSetting = async (key, value) => {
     await AsyncStorage.setItem(key, value);
@@ -282,6 +363,45 @@ export default function App() {
     }
   };
 
+  const handleCreateInput = async () => {
+    if (!branchId) {
+      setStatusMessage('Cần branch_id để nhập kho.');
+      return;
+    }
+    if (!inputForm.ingredient_id || !inputForm.quantity) {
+      setStatusMessage('Cần nguyên liệu và số lượng.');
+      return;
+    }
+    try {
+      const payload = {
+        branch_id: branchId,
+        reason: inputForm.reason || null,
+        items: [
+          {
+            ingredient_id: inputForm.ingredient_id,
+            quantity: Number(inputForm.quantity),
+            unit_cost: inputForm.unit_cost ? Number(inputForm.unit_cost) : null
+          }
+        ]
+      };
+      const res = await fetch(`${apiBase}/inventory/inputs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('input_failed');
+      const data = await res.json();
+      setInventoryInputs(prev => [...data.items, ...prev]);
+      setInputForm({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+      setStatusMessage('Nhập kho thành công.');
+    } catch (err) {
+      setStatusMessage('Không thể nhập kho.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -347,6 +467,7 @@ export default function App() {
               <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
             </TouchableOpacity>
           </View>
+          <Text style={styles.muted}>Realtime: {wsStatus}</Text>
         </View>
 
         <View style={styles.card}>
@@ -415,6 +536,56 @@ export default function App() {
         </View>
 
         {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Nhập kho nguyên liệu</Text>
+          <Text style={styles.label}>Ingredient ID</Text>
+          <TextInput
+            style={styles.input}
+            value={inputForm.ingredient_id}
+            onChangeText={(value) => setInputForm({ ...inputForm, ingredient_id: value })}
+            placeholder="ingredient_id"
+          />
+          {ingredients.length > 0 && (
+            <Text style={styles.muted}>Gợi ý: {ingredients.slice(0, 3).map(i => i.name).join(', ')}</Text>
+          )}
+          <Text style={styles.label}>Số lượng</Text>
+          <TextInput
+            style={styles.input}
+            value={inputForm.quantity}
+            onChangeText={(value) => setInputForm({ ...inputForm, quantity: value })}
+            placeholder="quantity"
+            keyboardType="numeric"
+          />
+          <Text style={styles.label}>Đơn giá</Text>
+          <TextInput
+            style={styles.input}
+            value={inputForm.unit_cost}
+            onChangeText={(value) => setInputForm({ ...inputForm, unit_cost: value })}
+            placeholder="unit_cost"
+            keyboardType="numeric"
+          />
+          <Text style={styles.label}>Lý do</Text>
+          <TextInput
+            style={styles.input}
+            value={inputForm.reason}
+            onChangeText={(value) => setInputForm({ ...inputForm, reason: value })}
+            placeholder="reason"
+          />
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleCreateInput}>
+            <Text style={styles.primaryText}>Tạo phiếu nhập</Text>
+          </TouchableOpacity>
+          {inventoryInputs.slice(0, 5).map(input => (
+            <View key={input.id} style={styles.cartRow}>
+              <View>
+                <Text style={styles.productName}>{input.ingredient_id}</Text>
+                <Text style={styles.muted}>{input.quantity} • {formatVnd(input.unit_cost || 0)}</Text>
+              </View>
+              <Text style={styles.totalValue}>{formatVnd(input.total_cost || 0)}</Text>
+            </View>
+          ))}
+          {inventoryInputs.length === 0 && <Text style={styles.muted}>Chưa có phiếu nhập kho.</Text>}
+        </View>
       </ScrollView>
 
       <Modal visible={showPayment} transparent animationType="slide">

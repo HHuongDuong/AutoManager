@@ -658,6 +658,64 @@ paths:
         '201':
           description: Created
 
+  /inventory/inputs:
+    get:
+      summary: List inventory inputs (inbound)
+      parameters:
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: ingredient_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List
+    post:
+      summary: Create inventory inputs (inbound)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [branch_id, items]
+              properties:
+                branch_id:
+                  type: string
+                  format: uuid
+                reason:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ingredient_id:
+                        type: string
+                        format: uuid
+                      quantity:
+                        type: number
+                      unit_cost:
+                        type: number
+      responses:
+        '201':
+          description: Created
+
   /inventory/receipts:
     post:
       summary: Create inventory receipt voucher

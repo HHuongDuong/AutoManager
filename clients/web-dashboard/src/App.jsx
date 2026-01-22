@@ -34,9 +34,11 @@ export default function App() {
   const [inventoryAlerts, setInventoryAlerts] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [inventoryTx, setInventoryTx] = useState([]);
+  const [inventoryInputs, setInventoryInputs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [aiSuggest, setAiSuggest] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
 
   const totalRevenueToday = useMemo(() => {
     if (!revenue.length) return 0;
@@ -51,45 +53,64 @@ export default function App() {
     localStorage.setItem('branchId', branchId);
   };
 
+  const fetchData = async () => {
+    setLoading(true);
+    setStatusMessage('');
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const params = new URLSearchParams();
+      if (branchId) params.set('branch_id', branchId);
+      const requests = await Promise.allSettled([
+        fetch(`${apiBase}/reports/revenue?${params.toString()}`, { headers }),
+        fetch(`${apiBase}/orders?${params.toString()}`, { headers }),
+        fetch(`${apiBase}/audit-logs?limit=8`, { headers }),
+        fetch(`${apiBase}/inventory/transactions?${params.toString()}`, { headers }),
+        fetch(`${apiBase}/inventory/inputs?${params.toString()}`, { headers }),
+        fetch(`${apiBase}/employees`, { headers })
+      ]);
+
+      const [revenueRes, ordersRes, auditRes, inventoryRes, inputsRes, employeesRes] = requests.map(r => r.status === 'fulfilled' ? r.value : null);
+      const revenueData = revenueRes?.ok ? await revenueRes.json() : [];
+      const ordersData = ordersRes?.ok ? await ordersRes.json() : [];
+      const auditData = auditRes?.ok ? await auditRes.json() : [];
+      const inventoryData = inventoryRes?.ok ? await inventoryRes.json() : [];
+      const inputsData = inputsRes?.ok ? await inputsRes.json() : [];
+      const employeesData = employeesRes?.ok ? await employeesRes.json() : [];
+
+      setRevenue(revenueData);
+      setOrders(ordersData);
+      setAuditLogs(auditData);
+      setInventoryTx(inventoryData);
+      setInventoryInputs(inputsData);
+      setEmployees(employeesData);
+
+      setInventoryAlerts([]);
+    } catch (err) {
+      setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
-    const fetchData = async () => {
-      setLoading(true);
-      setStatusMessage('');
+    fetchData();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const wsUrl = apiBase.replace('https', 'wss').replace('http', 'ws');
+    const url = `${wsUrl}/ws?token=${encodeURIComponent(token)}${branchId ? `&branch_id=${encodeURIComponent(branchId)}` : ''}`;
+    const ws = new WebSocket(url);
+    ws.onmessage = (event) => {
       try {
-        const headers = { Authorization: `Bearer ${token}` };
-        const params = new URLSearchParams();
-        if (branchId) params.set('branch_id', branchId);
-        const requests = await Promise.allSettled([
-          fetch(`${apiBase}/reports/revenue?${params.toString()}`, { headers }),
-          fetch(`${apiBase}/orders?${params.toString()}`, { headers }),
-          fetch(`${apiBase}/audit-logs?limit=8`, { headers }),
-          fetch(`${apiBase}/inventory/transactions?${params.toString()}`, { headers }),
-          fetch(`${apiBase}/employees`, { headers })
-        ]);
-
-        const [revenueRes, ordersRes, auditRes, inventoryRes, employeesRes] = requests.map(r => r.status === 'fulfilled' ? r.value : null);
-        const revenueData = revenueRes?.ok ? await revenueRes.json() : [];
-        const ordersData = ordersRes?.ok ? await ordersRes.json() : [];
-        const auditData = auditRes?.ok ? await auditRes.json() : [];
-        const inventoryData = inventoryRes?.ok ? await inventoryRes.json() : [];
-        const employeesData = employeesRes?.ok ? await employeesRes.json() : [];
-
-        setRevenue(revenueData);
-        setOrders(ordersData);
-        setAuditLogs(auditData);
-        setInventoryTx(inventoryData);
-        setEmployees(employeesData);
-
-        setInventoryAlerts([]);
-      } catch (err) {
-        setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
-      } finally {
-        setLoading(false);
+        const msg = JSON.parse(event.data || '{}');
+        if (msg.event) fetchData();
+      } catch {
+        // ignore
       }
     };
-
-    fetchData();
+    return () => ws.close();
   }, [apiBase, branchId, token]);
 
   const handleLogin = async () => {
@@ -149,6 +170,45 @@ export default function App() {
         { ingredient_id: 'demo-1', reorder_qty: 12, avg_daily: 5.4, target_stock: 38 },
         { ingredient_id: 'demo-2', reorder_qty: 8, avg_daily: 3.2, target_stock: 22 }
       ]);
+    }
+  };
+
+  const handleCreateInput = async () => {
+    if (!branchId) {
+      setStatusMessage('Cần chọn branch_id để nhập kho.');
+      return;
+    }
+    if (!inputForm.ingredient_id || !inputForm.quantity) {
+      setStatusMessage('Cần ingredient_id và số lượng.');
+      return;
+    }
+    try {
+      const payload = {
+        branch_id: branchId,
+        reason: inputForm.reason || null,
+        items: [
+          {
+            ingredient_id: inputForm.ingredient_id,
+            quantity: Number(inputForm.quantity),
+            unit_cost: inputForm.unit_cost ? Number(inputForm.unit_cost) : null
+          }
+        ]
+      };
+      const res = await fetch(`${apiBase}/inventory/inputs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('input_failed');
+      const data = await res.json();
+      setInputForm({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+      setInventoryInputs(prev => [...data.items, ...prev]);
+      setStatusMessage('Nhập kho thành công.');
+    } catch (err) {
+      setStatusMessage('Không thể nhập kho.');
     }
   };
 
@@ -341,6 +401,50 @@ export default function App() {
                   </div>
                 ))}
                 {inventoryTx.length === 0 && <div className="empty">Chưa có giao dịch kho.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Nhập kho nguyên liệu</h3>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Ingredient ID</label>
+                  <input value={inputForm.ingredient_id} onChange={(e) => setInputForm({ ...inputForm, ingredient_id: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Số lượng</label>
+                  <input value={inputForm.quantity} onChange={(e) => setInputForm({ ...inputForm, quantity: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Đơn giá</label>
+                  <input value={inputForm.unit_cost} onChange={(e) => setInputForm({ ...inputForm, unit_cost: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input value={inputForm.reason} onChange={(e) => setInputForm({ ...inputForm, reason: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleCreateInput}>Tạo phiếu nhập</button>
+            </div>
+
+            <div className="card">
+              <h3>Danh sách nhập kho</h3>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Số lượng</span>
+                  <span>Đơn giá</span>
+                  <span>Tổng</span>
+                </div>
+                {inventoryInputs.slice(0, 10).map(input => (
+                  <div key={input.id} className="table-row">
+                    <span>{input.ingredient_id}</span>
+                    <span>{input.quantity}</span>
+                    <span>{formatVnd(input.unit_cost || 0)}</span>
+                    <strong>{formatVnd(input.total_cost || 0)}</strong>
+                  </div>
+                ))}
+                {inventoryInputs.length === 0 && <div className="empty">Chưa có phiếu nhập kho.</div>}
               </div>
             </div>
 
