@@ -1,13 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-const fallbackProducts = [
-  { id: 'p-1', name: 'Cà phê sữa', price: 29000 },
-  { id: 'p-2', name: 'Bạc xỉu', price: 32000 },
-  { id: 'p-3', name: 'Trà đào cam sả', price: 35000 },
-  { id: 'p-4', name: 'Matcha latte', price: 42000 },
-  { id: 'p-5', name: 'Bánh croissant', price: 28000 }
-];
-
 const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
 export default function App() {
@@ -16,6 +8,14 @@ export default function App() {
   const [orderType, setOrderType] = useState(localStorage.getItem('orderType') || 'DINE_IN');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [orderQueue, setOrderQueue] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('orderQueue') || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const [products, setProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -28,6 +28,79 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('');
   const [showLogin, setShowLogin] = useState(!token);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  const saveQueue = (nextQueue) => {
+    setOrderQueue(nextQueue);
+    localStorage.setItem('orderQueue', JSON.stringify(nextQueue));
+  };
+
+  const enqueueOrder = (payload) => {
+    const idempotencyKey = crypto.randomUUID();
+    const item = {
+      id: idempotencyKey,
+      payload,
+      status: 'queued',
+      retries: 0,
+      next_retry_at: Date.now()
+    };
+    saveQueue([item, ...orderQueue]);
+    return item;
+  };
+
+  const processQueue = async () => {
+    if (!isOnline || !token || orderQueue.length === 0) return;
+    const now = Date.now();
+    const updated = [...orderQueue];
+    for (let i = 0; i < updated.length; i += 1) {
+      const item = updated[i];
+      if (item.status === 'synced') continue;
+      if (item.next_retry_at && item.next_retry_at > now) continue;
+      updated[i] = { ...item, status: 'sending' };
+      saveQueue(updated);
+      try {
+        const res = await fetch(`${apiBase}/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            'Idempotency-Key': item.id
+          },
+          body: JSON.stringify(item.payload)
+        });
+        if (!res.ok) throw new Error('order_failed');
+        const data = await res.json();
+        updated[i] = { ...item, status: 'synced', order_id: data.id };
+        saveQueue(updated);
+      } catch (err) {
+        const retries = (item.retries || 0) + 1;
+        const backoffMs = Math.min(30000, 1000 * Math.pow(2, retries));
+        updated[i] = {
+          ...item,
+          status: 'failed',
+          retries,
+          next_retry_at: Date.now() + backoffMs
+        };
+        saveQueue(updated);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const timer = setInterval(processQueue, 4000);
+    return () => clearInterval(timer);
+  }, [apiBase, isOnline, token, orderQueue]);
+
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
@@ -57,7 +130,7 @@ export default function App() {
         const data = await res.json();
         setProducts(data);
       } catch (err) {
-        setProducts(fallbackProducts.filter(p => p.name.toLowerCase().includes(search.toLowerCase())));
+        setProducts([]);
       } finally {
         setLoadingProducts(false);
       }
@@ -113,23 +186,32 @@ export default function App() {
   const handleCreateOrder = async () => {
     if (cart.length === 0) return;
     setStatusMessage('Đang tạo đơn...');
+    const payload = {
+      branch_id: branchId,
+      order_type: orderType,
+      items: cart.map(item => ({
+        product_id: item.id.startsWith('p-') ? null : item.id,
+        name: item.name,
+        unit_price: item.price,
+        quantity: item.quantity
+      })),
+      payments: payNow ? [{ amount: total, payment_method: paymentMethod }] : []
+    };
+    if (!isOnline) {
+      enqueueOrder(payload);
+      clearOrder();
+      setShowPayment(false);
+      setStatusMessage('Đang offline: đơn đã vào hàng đợi.');
+      return;
+    }
     try {
-      const payload = {
-        branch_id: branchId,
-        order_type: orderType,
-        items: cart.map(item => ({
-          product_id: item.id.startsWith('p-') ? null : item.id,
-          name: item.name,
-          unit_price: item.price,
-          quantity: item.quantity
-        })),
-        payments: payNow ? [{ amount: total, payment_method: paymentMethod }] : []
-      };
+      const idempotencyKey = crypto.randomUUID();
       const res = await fetch(`${apiBase}/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': idempotencyKey
         },
         body: JSON.stringify(payload)
       });
@@ -139,7 +221,10 @@ export default function App() {
       setShowPayment(false);
       setStatusMessage(`Tạo đơn thành công: ${data.id}`);
     } catch (err) {
-      setStatusMessage('Tạo đơn thất bại. Kiểm tra cấu hình chi nhánh.');
+      enqueueOrder(payload);
+      clearOrder();
+      setShowPayment(false);
+      setStatusMessage('Không thể gửi ngay. Đã đưa vào hàng đợi.');
     }
   };
 
@@ -237,10 +322,11 @@ export default function App() {
             </div>
           </div>
           <div className="cart-actions">
-            <button className="btn ghost">Lưu tạm</button>
+            <button className="btn ghost" onClick={processQueue}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</button>
             <button className="btn primary" onClick={() => setShowPayment(true)} disabled={!cart.length}>Thanh toán</button>
           </div>
           {statusMessage && <div className="status">{statusMessage}</div>}
+          <div className="status">Trạng thái: {isOnline ? 'Online' : 'Offline'}</div>
         </aside>
       </main>
 

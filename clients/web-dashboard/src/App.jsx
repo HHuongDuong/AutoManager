@@ -81,13 +81,7 @@ export default function App() {
         setInventoryTx(inventoryData);
         setEmployees(employeesData);
 
-        const lowStock = (ordersData || []).slice(0, 4).map((o, idx) => ({
-          id: o.id,
-          name: `Nguyên liệu #${idx + 1}`,
-          status: idx % 2 === 0 ? 'Cần nhập' : 'Theo dõi',
-          qty: Math.max(5, (idx + 2) * 3)
-        }));
-        setInventoryAlerts(lowStock);
+        setInventoryAlerts([]);
       } catch (err) {
         setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
       } finally {

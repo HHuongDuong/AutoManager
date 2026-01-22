@@ -12,13 +12,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const fallbackProducts = [
-  { id: 'p-1', name: 'Cà phê sữa', price: 29000 },
-  { id: 'p-2', name: 'Bạc xỉu', price: 32000 },
-  { id: 'p-3', name: 'Trà đào', price: 35000 },
-  { id: 'p-4', name: 'Matcha latte', price: 42000 }
-];
-
 const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
 export default function App() {
@@ -31,6 +24,7 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showLogin, setShowLogin] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [orderQueue, setOrderQueue] = useState([]);
 
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
@@ -49,10 +43,18 @@ export default function App() {
       const savedToken = await AsyncStorage.getItem('token');
       const savedBranch = await AsyncStorage.getItem('branchId');
       const savedEmployee = await AsyncStorage.getItem('employeeId');
+      const savedQueue = await AsyncStorage.getItem('orderQueue');
       if (savedBase) setApiBase(savedBase);
       if (savedToken) setToken(savedToken);
       if (savedBranch) setBranchId(savedBranch);
       if (savedEmployee) setEmployeeId(savedEmployee);
+      if (savedQueue) {
+        try {
+          setOrderQueue(JSON.parse(savedQueue));
+        } catch {
+          setOrderQueue([]);
+        }
+      }
       setShowLogin(!savedToken);
     };
     loadSettings();
@@ -73,8 +75,7 @@ export default function App() {
         const data = await res.json();
         setProducts(data);
       } catch (err) {
-        const filtered = fallbackProducts.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-        setProducts(filtered);
+        setProducts([]);
       } finally {
         setLoadingProducts(false);
       }
@@ -85,6 +86,68 @@ export default function App() {
   const persistSetting = async (key, value) => {
     await AsyncStorage.setItem(key, value);
   };
+
+  const makeId = () => `q_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+  const saveQueue = async (nextQueue) => {
+    setOrderQueue(nextQueue);
+    await AsyncStorage.setItem('orderQueue', JSON.stringify(nextQueue));
+  };
+
+  const enqueueOrder = async (payload) => {
+    const item = {
+      id: makeId(),
+      payload,
+      status: 'queued',
+      retries: 0,
+      next_retry_at: Date.now()
+    };
+    await saveQueue([item, ...orderQueue]);
+  };
+
+  const processQueue = async () => {
+    if (!token || orderQueue.length === 0) return;
+    const now = Date.now();
+    const updated = [...orderQueue];
+    for (let i = 0; i < updated.length; i += 1) {
+      const item = updated[i];
+      if (item.status === 'synced') continue;
+      if (item.next_retry_at && item.next_retry_at > now) continue;
+      updated[i] = { ...item, status: 'sending' };
+      await saveQueue(updated);
+      try {
+        const res = await fetch(`${apiBase}/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            'Idempotency-Key': item.id
+          },
+          body: JSON.stringify(item.payload)
+        });
+        if (!res.ok) throw new Error('order_failed');
+        const data = await res.json();
+        updated[i] = { ...item, status: 'synced', order_id: data.id };
+        await saveQueue(updated);
+      } catch (err) {
+        const retries = (item.retries || 0) + 1;
+        const backoffMs = Math.min(30000, 1000 * Math.pow(2, retries));
+        updated[i] = {
+          ...item,
+          status: 'failed',
+          retries,
+          next_retry_at: Date.now() + backoffMs
+        };
+        await saveQueue(updated);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const timer = setInterval(processQueue, 5000);
+    return () => clearInterval(timer);
+  }, [apiBase, token, orderQueue]);
 
   const addToCart = (product) => {
     setCart(prev => {
@@ -189,7 +252,8 @@ export default function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': makeId()
         },
         body: JSON.stringify(payload)
       });
@@ -199,7 +263,22 @@ export default function App() {
       setShowPayment(false);
       setStatusMessage('Tạo đơn thành công.');
     } catch (err) {
-      setStatusMessage('Không thể tạo đơn.');
+      const payload = {
+        branch_id: branchId,
+        order_type: orderType,
+        items: cart.map(item => ({
+          product_id: item.id.startsWith('p-') ? null : item.id,
+          name: item.name,
+          unit_price: item.price,
+          quantity: item.quantity
+        })),
+        payments: payNow ? [{ amount: total, payment_method: 'CASH' }] : []
+      };
+      await enqueueOrder(payload);
+      setCart([]);
+      setCashReceived('0');
+      setShowPayment(false);
+      setStatusMessage('Đang offline: đơn đã vào hàng đợi.');
     }
   };
 
@@ -261,6 +340,11 @@ export default function App() {
             </TouchableOpacity>
             <TouchableOpacity style={styles.outlineBtn} onPress={handleCheckOut}>
               <Text style={styles.outlineText}>Check-out</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.outlineBtn} onPress={processQueue}>
+              <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
             </TouchableOpacity>
           </View>
         </View>
