@@ -21,6 +21,16 @@ android/app/.cxx/
 android/app/intermediates/
 android/app/outputs/
 
+# Android build (nested projects)
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+**/android/app/.cxx/
+**/android/app/intermediates/
+**/android/app/outputs/
+**/android/build/generated/
+**/android/build/reports/
+
 
 # APK / AAB
 *.apk
