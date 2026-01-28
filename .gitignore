@@ -1,4 +1,4 @@
-node_modules/
+# Build outputs
 dist/
 .env
 *.log
@@ -7,3 +7,35 @@ dist/
 coverage/
 db/*.sqlite
 __pycache__/
+
+
+# Node
+node_modules/
+
+
+# Android build
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/app/intermediates/
+android/app/outputs/
+
+
+# APK / AAB
+*.apk
+*.aab
+
+
+# Local configs
+local.properties
+
+
+# Expo
+.expo/
+.expo-shared/
+
+
+# OS
+.DS_Store
+Thumbs.db
