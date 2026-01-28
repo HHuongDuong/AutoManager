@@ -18,7 +18,7 @@ Tài liệu này mô tả UI/UX hoàn chỉnh cho POS Desktop: mục tiêu trả
 	- Payments
 	- Orders Queue (offline)
 - Management (Web Dashboard)
-	- Products / Categories / Toppings
+	- Products / Categories
 	- Staff & Shifts
 	- Inventory
 	- Reports

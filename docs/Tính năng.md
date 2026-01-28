@@ -66,7 +66,7 @@
 
 1.  Nhân viên chọn **Tại chỗ**
 2.  Chọn bàn trống
-3.  Thêm món & topping
+3.  Thêm món
 4.  Phục vụ khách
 5.  Thanh toán
 6.  Đóng đơn
@@ -119,20 +119,6 @@
 1.  Chủ quán tạo menu
 2.  Nhân viên chọn món khi bán
 3.  Giá tự động áp dụng
-
-**8️⃣ Quản lý topping & nhóm topping**
-
-**Tính năng**
-
-*   Nhóm topping (ví dụ: Topping trà sữa)
-*   Topping riêng lẻ
-*   Override giá theo sản phẩm
-
-**Workflow**
-
-1.  Chủ quán cấu hình topping
-2.  Khi bán → nhân viên chọn topping
-3.  Giá topping cộng vào đơn
 
 **VI. Nhóm kho nguyên liệu (theo chế biến)**
 

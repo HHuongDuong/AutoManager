@@ -18,11 +18,19 @@ export default function App() {
   });
 
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [categoryId, setCategoryId] = useState(localStorage.getItem('categoryId') || '');
   const [ingredients, setIngredients] = useState([]);
   const [inventoryInputs, setInventoryInputs] = useState([]);
+  const [openOrders, setOpenOrders] = useState([]);
+  const [currentOrderId, setCurrentOrderId] = useState('');
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [showInputModal, setShowInputModal] = useState(false);
   const [wsStatus, setWsStatus] = useState('disconnected');
+  const [printers, setPrinters] = useState([]);
+  const [printerName, setPrinterName] = useState(localStorage.getItem('printerName') || '');
+  const [lastOrder, setLastOrder] = useState(null);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
@@ -106,9 +114,109 @@ export default function App() {
     return () => clearInterval(timer);
   }, [apiBase, isOnline, token, orderQueue]);
 
+  useEffect(() => {
+    loadPrinters();
+  }, []);
+
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
+
+  const loadPrinters = async () => {
+    if (!window?.electron?.printers?.list) return;
+    try {
+      const list = await window.electron.printers.list();
+      setPrinters(list || []);
+    } catch {
+      setPrinters([]);
+    }
+  };
+
+  const printReceipt = async (order) => {
+    if (!window?.electron?.printers?.print) {
+      setStatusMessage('Thiếu kết nối máy in Bluetooth.');
+      return;
+    }
+    try {
+      const payload = order?.id
+        ? { order_id: order.id }
+        : {
+          branch_id: branchId || null,
+          items: (order?.items?.length ? order.items : cart.map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+            unit_price: item.price,
+            subtotal: item.price * item.quantity
+          }))),
+          created_at: order?.created_at || new Date().toISOString(),
+          total_amount: order?.total_amount || total,
+          payments: order?.payments || [{ payment_method: paymentMethod }]
+        };
+      const res = await fetch(`${apiBase}/receipts/format`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('receipt_failed');
+      const data = await res.json();
+      await window.electron.printers.print({ html: data.html || '', deviceName: printerName || undefined });
+      setStatusMessage('Đã gửi lệnh in hóa đơn.');
+    } catch (err) {
+      setStatusMessage('Không thể in hóa đơn.');
+    }
+  };
+
+  const refreshProducts = async () => {
+    if (!token) return;
+    setLoadingProducts(true);
+    try {
+      const params = new URLSearchParams();
+      if (branchId) params.set('branch_id', branchId);
+      if (categoryId) params.set('category_id', categoryId);
+      if (search) params.set('q', search);
+      const res = await fetch(`${apiBase}/products?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setProducts(data);
+    } catch (err) {
+      setProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
+
+  const refreshCategories = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBase}/product-categories`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setCategories(data);
+    } catch (err) {
+      setCategories([]);
+    }
+  };
+
+  const refreshIngredients = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBase}/ingredients`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setIngredients(data);
+    } catch (err) {
+      setIngredients([]);
+    }
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -119,49 +227,15 @@ export default function App() {
   }, [apiBase, token]);
 
   useEffect(() => {
-    if (!token) return;
-    const controller = new AbortController();
-    const fetchProducts = async () => {
-      setLoadingProducts(true);
-      try {
-        const params = new URLSearchParams();
-        if (branchId) params.set('branch_id', branchId);
-        if (search) params.set('q', search);
-        const res = await fetch(`${apiBase}/products?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal
-        });
-        if (!res.ok) throw new Error('fetch_failed');
-        const data = await res.json();
-        setProducts(data);
-      } catch (err) {
-        setProducts([]);
-      } finally {
-        setLoadingProducts(false);
-      }
-    };
-    fetchProducts();
-    return () => controller.abort();
-  }, [apiBase, branchId, search, token]);
+    refreshProducts();
+  }, [apiBase, branchId, categoryId, search, token]);
 
   useEffect(() => {
-    if (!token) return;
-    const controller = new AbortController();
-    const fetchIngredients = async () => {
-      try {
-        const res = await fetch(`${apiBase}/ingredients`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal
-        });
-        if (!res.ok) throw new Error('fetch_failed');
-        const data = await res.json();
-        setIngredients(data);
-      } catch (err) {
-        setIngredients([]);
-      }
-    };
-    fetchIngredients();
-    return () => controller.abort();
+    refreshIngredients();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    refreshCategories();
   }, [apiBase, token]);
 
   useEffect(() => {
@@ -202,8 +276,54 @@ export default function App() {
     }
   };
 
+  const fetchOpenOrders = async () => {
+    if (!token || !branchId) return;
+    setLoadingOrders(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('branch_id', branchId);
+      params.set('status', 'OPEN');
+      const res = await fetch(`${apiBase}/orders?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setOpenOrders(data);
+    } catch {
+      setOpenOrders([]);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const loadOrder = async (orderId) => {
+    if (!token || !orderId) return;
+    try {
+      const res = await fetch(`${apiBase}/orders/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setCurrentOrderId(data.id);
+      setCart((data.items || []).map(item => ({
+        id: item.id,
+        product_id: item.product_id,
+        name: item.name,
+        price: Number(item.unit_price || 0),
+        quantity: Number(item.quantity || 1)
+      })));
+      setStatusMessage(`Đang chỉnh phiếu: ${data.id}`);
+    } catch {
+      setStatusMessage('Không thể tải phiếu.');
+    }
+  };
+
   useEffect(() => {
     refreshInputs();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    fetchOpenOrders();
   }, [apiBase, branchId, token]);
 
   useEffect(() => {
@@ -220,8 +340,16 @@ export default function App() {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data || '{}');
-        if (msg.event?.startsWith('inventory.input')) refreshInputs();
-        if (msg.event?.startsWith('order.')) setStatusMessage(`Realtime: ${msg.event}`);
+        if (msg.event?.startsWith('inventory.')) refreshInputs();
+        if (msg.event?.startsWith('ingredient.')) refreshIngredients();
+        if (msg.event?.startsWith('product.') || msg.event?.startsWith('product_category.')) {
+          refreshProducts();
+          if (msg.event?.startsWith('product_category.')) refreshCategories();
+        }
+        if (msg.event?.startsWith('order.') || msg.event?.startsWith('table.')) {
+          fetchOpenOrders();
+          setStatusMessage(`Realtime: ${msg.event}`);
+        }
       } catch {
         // ignore
       }
@@ -229,29 +357,89 @@ export default function App() {
     return () => ws.close();
   }, [apiBase, branchId, token]);
 
-  const addToCart = (product) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
-      if (existing) {
-        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+  const addToCart = async (product) => {
+    if (currentOrderId) {
+      try {
+        const res = await fetch(`${apiBase}/orders/${currentOrderId}/items`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            product_id: product.id,
+            name: product.name,
+            quantity: 1,
+            unit_price: Number(product.price || 0)
+          })
+        });
+        if (!res.ok) throw new Error('add_failed');
+        await loadOrder(currentOrderId);
+      } catch {
+        setStatusMessage('Không thể thêm món vào phiếu.');
       }
-      return [...prev, { id: product.id, name: product.name, price: Number(product.price || 0), quantity: 1 }];
+      return;
+    }
+    setCart(prev => {
+      const existing = prev.find(item => item.product_id === product.id || item.id === product.id);
+      if (existing) {
+        return prev.map(item => (item.product_id === product.id || item.id === product.id)
+          ? { ...item, quantity: item.quantity + 1 }
+          : item);
+      }
+      return [...prev, { id: product.id, product_id: product.id, name: product.name, price: Number(product.price || 0), quantity: 1 }];
     });
   };
 
-  const updateQty = (id, delta) => {
+  const updateQty = async (id, delta) => {
+    const item = cart.find(i => i.id === id);
+    if (!item) return;
+    const nextQty = Math.max(1, item.quantity + delta);
+    if (currentOrderId) {
+      try {
+        const res = await fetch(`${apiBase}/orders/${currentOrderId}/items/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ quantity: nextQty })
+        });
+        if (!res.ok) throw new Error('update_failed');
+        await loadOrder(currentOrderId);
+      } catch {
+        setStatusMessage('Không thể cập nhật số lượng.');
+      }
+      return;
+    }
     setCart(prev => prev
-      .map(item => item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item)
-      .filter(item => item.quantity > 0)
+      .map(row => row.id === id ? { ...row, quantity: nextQty } : row)
+      .filter(row => row.quantity > 0)
     );
   };
 
-  const removeItem = (id) => setCart(prev => prev.filter(item => item.id !== id));
+  const removeItem = async (id) => {
+    if (currentOrderId) {
+      try {
+        const res = await fetch(`${apiBase}/orders/${currentOrderId}/items/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('delete_failed');
+        await loadOrder(currentOrderId);
+      } catch {
+        setStatusMessage('Không thể xoá món khỏi phiếu.');
+      }
+      return;
+    }
+    setCart(prev => prev.filter(item => item.id !== id));
+  };
 
   const clearOrder = () => {
     setCart([]);
     setCashReceived(0);
     setStatusMessage('');
+    setCurrentOrderId('');
   };
 
   const handleLogin = async () => {
@@ -275,17 +463,47 @@ export default function App() {
 
   const handleCreateOrder = async () => {
     if (cart.length === 0) return;
+    if (currentOrderId) {
+      try {
+        setStatusMessage('Đang thanh toán...');
+        const payRes = await fetch(`${apiBase}/orders/${currentOrderId}/payments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ amount: total, payment_method: paymentMethod })
+        });
+        if (!payRes.ok) throw new Error('payment_failed');
+        await fetch(`${apiBase}/orders/${currentOrderId}/close`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const orderRes = await fetch(`${apiBase}/orders/${currentOrderId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const orderData = orderRes.ok ? await orderRes.json() : null;
+        setLastOrder(orderData);
+        if (orderData) printReceipt(orderData);
+        clearOrder();
+        setShowPayment(false);
+        setStatusMessage(`Đã thanh toán: ${currentOrderId}`);
+        fetchOpenOrders();
+      } catch (err) {
+        setStatusMessage('Không thể thanh toán phiếu.');
+      }
+      return;
+    }
     setStatusMessage('Đang tạo đơn...');
     const payload = {
       branch_id: branchId,
       order_type: orderType,
       items: cart.map(item => ({
-        product_id: item.id.startsWith('p-') ? null : item.id,
+        product_id: item.product_id || (item.id.startsWith('p-') ? null : item.id),
         name: item.name,
         unit_price: item.price,
         quantity: item.quantity
-      })),
-      payments: payNow ? [{ amount: total, payment_method: paymentMethod }] : []
+      }))
     };
     if (!isOnline) {
       enqueueOrder(payload);
@@ -307,14 +525,100 @@ export default function App() {
       });
       if (!res.ok) throw new Error('order_failed');
       const data = await res.json();
-      clearOrder();
-      setShowPayment(false);
-      setStatusMessage(`Tạo đơn thành công: ${data.id}`);
+      setLastOrder(data);
+      if (payNow) {
+        const payRes = await fetch(`${apiBase}/orders/${data.id}/payments`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ amount: total, payment_method: paymentMethod })
+        });
+        if (!payRes.ok) throw new Error('payment_failed');
+        await fetch(`${apiBase}/orders/${data.id}/close`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        printReceipt(data);
+        clearOrder();
+        setShowPayment(false);
+        setStatusMessage(`Đã thanh toán: ${data.id}`);
+      } else {
+        clearOrder();
+        setShowPayment(false);
+        setStatusMessage(`Đã lưu phiếu: ${data.id}`);
+      }
+      fetchOpenOrders();
     } catch (err) {
       enqueueOrder(payload);
       clearOrder();
       setShowPayment(false);
       setStatusMessage('Không thể gửi ngay. Đã đưa vào hàng đợi.');
+    }
+  };
+
+  const handleSaveOrder = async () => {
+    if (cart.length === 0) return;
+    if (currentOrderId) {
+      setStatusMessage('Phiếu đã được lưu.');
+      return;
+    }
+    setStatusMessage('Đang lưu phiếu...');
+    const payload = {
+      branch_id: branchId,
+      order_type: orderType,
+      items: cart.map(item => ({
+        product_id: item.product_id || (item.id.startsWith('p-') ? null : item.id),
+        name: item.name,
+        unit_price: item.price,
+        quantity: item.quantity
+      }))
+    };
+    if (!isOnline) {
+      enqueueOrder(payload);
+      clearOrder();
+      setStatusMessage('Đang offline: phiếu đã vào hàng đợi.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('order_failed');
+      const data = await res.json();
+      setLastOrder(data);
+      clearOrder();
+      setStatusMessage(`Đã lưu phiếu: ${data.id}`);
+      fetchOpenOrders();
+    } catch (err) {
+      setStatusMessage('Không thể lưu phiếu.');
+    }
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    const reason = prompt('Nhập lý do xóa phiếu');
+    if (!reason) return;
+    try {
+      const res = await fetch(`${apiBase}/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ reason })
+      });
+      if (!res.ok) throw new Error('cancel_failed');
+      if (currentOrderId === orderId) clearOrder();
+      setStatusMessage('Đã xóa phiếu.');
+      fetchOpenOrders();
+    } catch (err) {
+      setStatusMessage('Không thể xóa phiếu.');
     }
   };
 
@@ -362,6 +666,16 @@ export default function App() {
     localStorage.setItem('apiBase', apiBase);
     localStorage.setItem('branchId', branchId);
     localStorage.setItem('orderType', orderType);
+    localStorage.setItem('printerName', printerName);
+    localStorage.setItem('categoryId', categoryId);
+  };
+
+  const handlePrintLast = () => {
+    if (!lastOrder && cart.length === 0) {
+      setStatusMessage('Chưa có đơn để in.');
+      return;
+    }
+    printReceipt(lastOrder || null);
   };
 
   return (
@@ -390,6 +704,12 @@ export default function App() {
       <main className="layout">
         <section className="menu-panel">
           <div className="search-row">
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">Tất cả nhóm</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -419,6 +739,7 @@ export default function App() {
             <h2>Hoá đơn</h2>
             <button className="btn ghost" onClick={clearOrder}>Tạo mới</button>
           </div>
+          {currentOrderId && <div className="status">Đang chỉnh phiếu: {currentOrderId}</div>}
           <div className="cart-list">
             {cart.length === 0 && <div className="empty">Chưa có món nào.</div>}
             {cart.map(item => (
@@ -454,9 +775,28 @@ export default function App() {
           <div className="cart-actions">
             <button className="btn ghost" onClick={processQueue}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</button>
             <button className="btn ghost" onClick={() => setShowInputModal(true)}>Nhập kho</button>
+            <button className="btn ghost" onClick={handlePrintLast}>In hóa đơn</button>
+            <button className="btn ghost" onClick={handleSaveOrder} disabled={!cart.length || !!currentOrderId}>Lưu phiếu</button>
             <button className="btn primary" onClick={() => setShowPayment(true)} disabled={!cart.length}>Thanh toán</button>
           </div>
           {statusMessage && <div className="status">{statusMessage}</div>}
+          <div className="methods">
+            <h4>Phiếu mở</h4>
+            {loadingOrders && <div className="empty">Đang tải phiếu...</div>}
+            {!loadingOrders && openOrders.length === 0 && <div className="empty">Chưa có phiếu mở.</div>}
+            <div className="cart-list">
+              {openOrders.slice(0, 6).map(order => (
+                <div key={order.id} className="cart-item">
+                  <div>
+                    <h4>{order.id}</h4>
+                    <span>{new Date(order.created_at).toLocaleString('vi-VN')}</span>
+                  </div>
+                  <button className="btn ghost" onClick={() => loadOrder(order.id)}>Mở</button>
+                  <button className="btn ghost" onClick={() => handleCancelOrder(order.id)}>Xoá</button>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="status">Trạng thái: {isOnline ? 'Online' : 'Offline'} • WS: {wsStatus}</div>
         </aside>
       </main>
@@ -601,6 +941,23 @@ export default function App() {
                     <option value="TAKE_AWAY">TAKE_AWAY</option>
                     <option value="DELIVERY">DELIVERY</option>
                   </select>
+                </div>
+                <div className="form-row">
+                  <label>Máy in Bluetooth</label>
+                  <select value={printerName} onChange={(e) => { setPrinterName(e.target.value); persistSettings(); }}>
+                    <option value="">Máy in mặc định</option>
+                    {printers.map((p) => (
+                      <option key={p.name} value={p.name}>{p.displayName || p.name}</option>
+                    ))}
+                  </select>
+                  <small className="hint">Hãy ghép đôi máy in Bluetooth trong Windows trước khi chọn ở đây.</small>
+                </div>
+                <div className="form-row">
+                  <label>In thử</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn ghost" type="button" onClick={loadPrinters}>Làm mới máy in</button>
+                    <button className="btn ghost" type="button" onClick={() => printReceipt(lastOrder || null)}>In thử</button>
+                  </div>
                 </div>
                 <div className="form-row">
                   <label>Tài khoản</label>

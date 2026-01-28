@@ -26,7 +26,7 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
       "order_type": "DINE_IN|TAKEAWAY",
       "table_id": "uuid|null",
       "items": [
-        { "product_id": "uuid", "name": "string", "quantity": 1, "unit_price": 9.5, "toppings": [{"id":"uuid","price":1.0}] }
+        { "product_id": "uuid", "name": "string", "quantity": 1, "unit_price": 9.5 }
       ],
       "payments": [ { "amount": 100, "payment_method": "CASH" } ],
       "metadata": { }
@@ -97,21 +97,6 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
 - DELETE /products/{id}
   - RBAC: `PRODUCT_MANAGE`
 
-- GET /topping-groups
-  - RBAC: `PRODUCT_VIEW`
-
-- POST /topping-groups
-  - RBAC: `PRODUCT_MANAGE`
-
-- GET /toppings?group_id={id}
-  - RBAC: `PRODUCT_VIEW`
-
-- POST /toppings
-  - RBAC: `PRODUCT_MANAGE`
-
-- POST /products/{id}/toppings
-  - RBAC: `PRODUCT_MANAGE`
-
 ## Inventory
 
 - GET /inventory/transactions?branch_id={id}&from=&to=
@@ -161,13 +146,25 @@ Tài liệu này mô tả các endpoint API lõi, headers, payload mẫu, idempo
   - RBAC: `REPORT_VIEW`
   - Returns bucketed revenue and order counts
 
+- GET /reports/revenue/export?branch_id=&from=&to=&group_by=day|month&format=csv|xlsx
+  - RBAC: `REPORT_VIEW`
+  - CSV/XLSX export
+
 - GET /reports/inventory?branch_id=&ingredient_id=&from=&to=
   - RBAC: `REPORT_VIEW`
   - Returns aggregated inventory movements
 
+- GET /reports/inventory/export?branch_id=&ingredient_id=&from=&to=&format=csv|xlsx
+  - RBAC: `REPORT_VIEW`
+  - CSV/XLSX export
+
 - GET /reports/attendance?branch_id=&from=&to=
   - RBAC: `REPORT_VIEW`
   - Returns total hours by employee
+
+- GET /reports/attendance/export?branch_id=&from=&to=&format=csv|xlsx
+  - RBAC: `REPORT_VIEW`
+  - CSV/XLSX export
 
 ## AI (optional)
 

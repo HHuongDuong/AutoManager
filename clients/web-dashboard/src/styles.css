@@ -197,6 +197,29 @@ body {
   color: var(--muted);
 }
 
+.product-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.product-name img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.muted-text {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-top: 4px;
+}
+
 .chart-bars {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(30px, 1fr));
@@ -247,6 +270,16 @@ body {
   align-items: center;
 }
 
+.table-row.five {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .table-row.head {
   background: #e2e8f0;
   font-weight: 600;
@@ -255,6 +288,14 @@ body {
 
 .table-row strong {
   text-align: right;
+}
+
+.table-row select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 12px;
 }
 
 .tips {
@@ -283,6 +324,13 @@ body {
   border-radius: 12px;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .btn {
@@ -367,6 +415,19 @@ body {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
+}
+
+.form-row select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 @media (max-width: 1024px) {

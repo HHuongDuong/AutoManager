@@ -130,12 +130,10 @@ Hệ thống AutoManager POS được thiết kế theo mô hình **3-Tier Archi
 
 *   Quản lý sản phẩm
 *   Phân loại: đồ ăn, đồ uống, combo
-*   Quản lý topping & nhóm topping
 
 **Thiết kế:**
 
 *   Product categories
-*   Topping groups & product\_toppings (price\_override)
 
 ### 3.6 Module kho nguyên liệu (theo chế biến)
 
@@ -225,9 +223,6 @@ Hệ thống AutoManager POS được thiết kế theo mô hình **3-Tier Archi
 *   order\_items
 *   products
 *   product\_categories
-*   toppings
-*   topping\_groups
-*   product\_toppings
 *   ingredients
 *   inventory\_transactions
 

@@ -1,21 +1,45 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const { WebSocketServer } = require('ws');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
+const multer = require('multer');
 const db = require('./db');
 const { signToken, authenticate, requirePermission } = require('./auth');
 const { redisPing, redisGet, redisSet } = require('./infra/redis');
 const { rabbitPing, publish } = require('./infra/rabbit');
 const { issueInvoice } = require('./infra/einvoice');
+const { buildReceiptPayload, renderReceiptText, renderReceiptHtml } = require('./receipt');
+const ExcelJS = require('exceljs');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+const uploadsRoot = path.join(__dirname, '..', 'uploads');
+const productUploadDir = path.join(uploadsRoot, 'products');
+fs.mkdirSync(productUploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadsRoot));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, productUploadDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `${randomUUID()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype?.startsWith('image/')) return cb(new Error('invalid_image_type'));
+    return cb(null, true);
+  }
+});
 app.use((req, res, next) => {
   req.requestId = req.headers['x-request-id'] || randomUUID();
   res.setHeader('x-request-id', req.requestId);
@@ -108,6 +132,23 @@ async function ensureBranchAccess(req, branchId) {
 async function getOrderBranchId(orderId) {
   const result = await db.query('SELECT branch_id FROM orders WHERE id = $1', [orderId]);
   return result.rows[0]?.branch_id || null;
+}
+
+async function getIngredientBranchOnHand(branchId, ingredientIds) {
+  if (!branchId || !ingredientIds?.length) return new Map();
+  const result = await db.query(
+    `SELECT ingredient_id,
+            COALESCE(SUM(CASE
+              WHEN transaction_type = 'IN' THEN quantity
+              WHEN transaction_type = 'OUT' THEN -quantity
+              WHEN transaction_type = 'ADJUST' THEN quantity
+              ELSE 0 END), 0) AS on_hand
+     FROM inventory_transactions
+     WHERE branch_id = $1 AND ingredient_id = ANY($2)
+     GROUP BY ingredient_id`,
+    [branchId, ingredientIds]
+  );
+  return new Map(result.rows.map(r => [r.ingredient_id, Number(r.on_hand || 0)]));
 }
 
 async function getTableBranchId(tableId) {
@@ -207,6 +248,7 @@ app.post('/rbac/roles', authenticate, requirePermission('RBAC_MANAGE'), async (r
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
   const result = await db.query('INSERT INTO roles (id, name) VALUES ($1, $2) RETURNING id, name', [randomUUID(), name]);
+  publishRealtime('rbac.role.created', { id: result.rows[0].id, name: result.rows[0].name }, null);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -222,6 +264,7 @@ app.post('/rbac/permissions', authenticate, requirePermission('RBAC_MANAGE'), as
     'INSERT INTO permissions (id, code, description) VALUES ($1, $2, $3) RETURNING id, code, description',
     [randomUUID(), code, description || null]
   );
+  publishRealtime('rbac.permission.created', { id: result.rows[0].id, code: result.rows[0].code }, null);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -230,6 +273,7 @@ app.post('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBA
   const { permission_id } = req.body || {};
   if (!permission_id) return res.status(400).json({ error: 'permission_id_required' });
   await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)', [roleId, permission_id]);
+  publishRealtime('rbac.role.permission.added', { role_id: roleId, permission_id }, null);
   return res.status(201).json({ role_id: roleId, permission_id });
 });
 
@@ -238,6 +282,7 @@ app.post('/rbac/users/:userId/roles', authenticate, requirePermission('RBAC_MANA
   const { role_id } = req.body || {};
   if (!role_id) return res.status(400).json({ error: 'role_id_required' });
   await db.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, role_id]);
+  publishRealtime('rbac.user.role.added', { user_id: userId, role_id }, null);
   return res.status(201).json({ user_id: userId, role_id });
 });
 
@@ -246,6 +291,7 @@ app.post('/rbac/users/:userId/branches', authenticate, requirePermission('RBAC_M
   const { branch_id } = req.body || {};
   if (!branch_id) return res.status(400).json({ error: 'branch_id_required' });
   await db.query('INSERT INTO user_branch_access (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, branch_id]);
+  publishRealtime('rbac.user.branch.added', { user_id: userId, branch_id }, branch_id);
   return res.status(201).json({ user_id: userId, branch_id });
 });
 
@@ -262,6 +308,7 @@ app.put('/branches/:branchId/e-invoice', authenticate, requirePermission('EINVOI
   if (!(await ensureBranchAccess(req, branchId))) return res.status(403).json({ error: 'branch_forbidden' });
   const settings = await upsertEInvoiceSettings(branchId, Boolean(enabled), provider, config);
   await writeAuditLog(req, 'EINVOICE_SETTINGS_UPDATE', 'e_invoice_settings', branchId, { branch_id: branchId, enabled, provider });
+  publishRealtime('einvoice.settings.updated', settings, branchId);
   return res.json(settings);
 });
 
@@ -285,6 +332,65 @@ async function getOrderById(orderId) {
   const itemsRes = await db.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY created_at', [orderId]);
   const paymentsRes = await db.query('SELECT * FROM payments WHERE order_id = $1 ORDER BY created_at', [orderId]);
   return Object.assign({}, orderRes.rows[0], { items: itemsRes.rows, payments: paymentsRes.rows });
+}
+
+app.post('/receipts/format', authenticate, requirePermission('ORDERS_READ'), async (req, res) => {
+  try {
+    const { order_id, branch_id, items, payments, created_at, total_amount, payment_method } = req.body || {};
+    let order = null;
+    if (order_id) {
+      order = await getOrderById(order_id);
+      if (!order) return res.status(404).json({ error: 'not_found' });
+      if (!(await ensureBranchAccess(req, order.branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    } else if (branch_id) {
+      if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    }
+    const payload = buildReceiptPayload({
+      order,
+      branch_id,
+      items,
+      payments,
+      created_at,
+      total_amount,
+      payment_method
+    });
+    return res.json({
+      payload,
+      text: renderReceiptText(payload),
+      html: renderReceiptHtml(payload)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'receipt_format_failed', detail: err.message });
+  }
+});
+
+function toCsv(rows, headers) {
+  const escape = (val) => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  const lines = [];
+  lines.push(headers.map(h => escape(h.label)).join(','));
+  for (const row of rows) {
+    lines.push(headers.map(h => escape(row[h.key])).join(','));
+  }
+  return lines.join('\n');
+}
+
+async function sendXlsx(res, rows, sheetName, filename) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet(sheetName);
+  const keys = rows?.length ? Object.keys(rows[0]) : [];
+  worksheet.columns = keys.map(key => ({ header: key, key }));
+  if (rows?.length) worksheet.addRows(rows);
+  const buffer = await workbook.xlsx.writeBuffer();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(Buffer.from(buffer));
 }
 
 async function getEInvoiceSettings(branchId) {
@@ -331,6 +437,7 @@ async function issueEInvoiceForOrder(req, order) {
       [invoiceId, order.branch_id, order.id, settings.provider, result.status || 'ISSUED', result.external_id || null, payload, result.raw || null]
     );
     await writeAuditLog(req, 'EINVOICE_ISSUE', 'e_invoice', invoiceId, { branch_id: order.branch_id, order_id: order.id });
+    publishRealtime('einvoice.issued', { id: invoiceId, order_id: order.id, branch_id: order.branch_id, provider: settings.provider }, order.branch_id);
     return { issued: true, id: invoiceId, external_id: result.external_id || null };
   } catch (err) {
     await writeAuditLog(req, 'EINVOICE_ISSUE_FAILED', 'e_invoice', null, { branch_id: order.branch_id, order_id: order.id, error: err.message });
@@ -381,8 +488,8 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), async (req
       const unitPrice = Number(item.unit_price || 0);
       const subtotal = quantity * unitPrice;
       await client.query(
-        'INSERT INTO order_items (id, order_id, product_id, name, quantity, unit_price, subtotal, toppings) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [itemId, orderId, item.product_id || null, item.name || null, quantity, unitPrice, subtotal, item.toppings || null]
+        'INSERT INTO order_items (id, order_id, product_id, name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [itemId, orderId, item.product_id || null, item.name || null, quantity, unitPrice, subtotal]
       );
     }
 
@@ -419,7 +526,7 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), async (req
 });
 
 app.get('/orders', authenticate, requirePermission('ORDERS_VIEW'), async (req, res) => {
-  const { branch_id, from, to } = req.query || {};
+  const { branch_id, from, to, status } = req.query || {};
   const params = [];
   const filters = [];
   if (branch_id) {
@@ -434,11 +541,30 @@ app.get('/orders', authenticate, requirePermission('ORDERS_VIEW'), async (req, r
       filters.push(`branch_id = ANY($${params.length})`);
     }
   }
+  if (status) { params.push(status); filters.push(`order_status = $${params.length}`); }
   if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
   if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await db.query(`SELECT * FROM orders ${where} ORDER BY created_at DESC`, params);
   return res.json(result.rows);
+});
+
+app.delete('/orders/:id', authenticate, requirePermission('ORDERS_UPDATE'), async (req, res) => {
+  const { reason } = req.body || {};
+  if (!reason) return res.status(400).json({ error: 'reason_required' });
+  const orderRes = await db.query('SELECT branch_id, payment_status, table_id, order_status FROM orders WHERE id = $1', [req.params.id]);
+  const order = orderRes.rows[0];
+  if (!order) return res.status(404).json({ error: 'not_found' });
+  if (!(await ensureBranchAccess(req, order.branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  if (order.payment_status === 'PAID') return res.status(409).json({ error: 'already_paid' });
+  if (order.order_status === 'CANCELLED') return res.status(409).json({ error: 'already_cancelled' });
+  await db.query('UPDATE orders SET order_status = $2, updated_at = now() WHERE id = $1', [req.params.id, 'CANCELLED']);
+  if (order.table_id) {
+    await db.query('UPDATE tables SET status = "AVAILABLE" WHERE id = $1', [order.table_id]);
+  }
+  await writeAuditLog(req, 'ORDER_CANCEL', 'order', req.params.id, { reason });
+  publishRealtime('order.cancelled', { id: req.params.id, reason }, order.branch_id);
+  return res.json({ cancelled: true });
 });
 
 app.get('/orders/:id', authenticate, requirePermission('ORDERS_VIEW'), async (req, res) => {
@@ -451,7 +577,7 @@ app.get('/orders/:id', authenticate, requirePermission('ORDERS_VIEW'), async (re
 });
 
 app.post('/orders/:id/items', authenticate, requirePermission('ORDERS_UPDATE'), async (req, res) => {
-  const { product_id, name, quantity, unit_price, toppings } = req.body || {};
+  const { product_id, name, quantity, unit_price } = req.body || {};
   if (!product_id && !name) return res.status(400).json({ error: 'product_or_name_required' });
   const orderBranch = await getOrderBranchId(req.params.id);
   if (!orderBranch) return res.status(404).json({ error: 'not_found' });
@@ -464,8 +590,8 @@ app.post('/orders/:id/items', authenticate, requirePermission('ORDERS_UPDATE'), 
     const price = Number(unit_price || 0);
     const subtotal = qty * price;
     await client.query(
-      'INSERT INTO order_items (id, order_id, product_id, name, quantity, unit_price, subtotal, toppings) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [itemId, req.params.id, product_id || null, name || null, qty, price, subtotal, toppings || null]
+      'INSERT INTO order_items (id, order_id, product_id, name, quantity, unit_price, subtotal) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [itemId, req.params.id, product_id || null, name || null, qty, price, subtotal]
     );
     const total = await updateOrderTotal(client, req.params.id);
     await writeAuditLog(req, 'ORDER_ITEM_ADD', 'order', req.params.id, { item_id: itemId });
@@ -606,6 +732,7 @@ app.post('/tables', authenticate, requirePermission('TABLE_MANAGE'), async (req,
     [randomUUID(), branch_id, name, status || 'AVAILABLE']
   );
   await writeAuditLog(req, 'TABLE_CREATE', 'table', result.rows[0].id, { name, branch_id });
+  publishRealtime('table.created', result.rows[0], branch_id);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -620,6 +747,7 @@ app.patch('/tables/:id', authenticate, requirePermission('TABLE_MANAGE'), async 
   );
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'TABLE_UPDATE', 'table', req.params.id, req.body);
+  publishRealtime('table.updated', result.rows[0], tableBranch);
   return res.json(result.rows[0]);
 });
 
@@ -630,6 +758,7 @@ app.delete('/tables/:id', authenticate, requirePermission('TABLE_MANAGE'), async
   const result = await db.query('DELETE FROM tables WHERE id = $1 RETURNING id', [req.params.id]);
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'TABLE_DELETE', 'table', req.params.id, {});
+  publishRealtime('table.deleted', { id: req.params.id }, tableBranch);
   return res.json({ deleted: true });
 });
 
@@ -647,51 +776,6 @@ app.patch('/tables/:id/status', authenticate, requirePermission('TABLE_MANAGE'),
 });
 
 // Audit log viewer
-app.get('/audit-logs', authenticate, requirePermission('AUDIT_VIEW'), async (req, res) => {
-  const { user_id, action, from, to, branch_id, limit = 100 } = req.query || {};
-  const params = [];
-  const filters = [];
-  if (user_id) { params.push(user_id); filters.push(`user_id = $${params.length}`); }
-  if (action) { params.push(action); filters.push(`action = $${params.length}`); }
-  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
-  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
-  if (branch_id) {
-    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
-    params.push(branch_id);
-    filters.push(`branch_id = $${params.length}`);
-  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
-    const allowed = await getAllowedBranchIds(req.user.sub);
-    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
-    params.push(allowed);
-    filters.push(`(branch_id = ANY($${params.length}) OR branch_id IS NULL)`);
-  }
-  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  params.push(Number(limit));
-  const result = await db.query(
-    `SELECT id, user_id, branch_id, action, object_type, object_id, payload, request_id, method, path, ip, user_agent, created_at
-     FROM audit_logs ${where} ORDER BY created_at DESC LIMIT $${params.length}`,
-    params
-  );
-  return res.json(result.rows);
-});
-
-// Employee management (CRUD)
-app.get('/employees', authenticate, requirePermission('EMPLOYEE_VIEW'), async (req, res) => {
-  const params = [];
-  let where = '';
-  if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
-    const allowed = await getAllowedBranchIds(req.user.sub);
-    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
-    params.push(allowed);
-    where = 'WHERE e.branch_id = ANY($1)';
-  }
-  const result = await db.query(
-    `SELECT e.id, e.user_id, e.branch_id, e.full_name, e.phone, e.position, u.username, u.is_active
-     FROM employees e LEFT JOIN users u ON u.id = e.user_id ${where} ORDER BY e.created_at DESC`,
-    params
-  );
-  return res.json(result.rows);
-});
 
 app.get('/employees/:id', authenticate, requirePermission('EMPLOYEE_VIEW'), async (req, res) => {
   const empBranch = await getEmployeeBranchId(req.params.id);
@@ -722,6 +806,7 @@ app.post('/employees', authenticate, requirePermission('EMPLOYEE_MANAGE'), async
       [employeeId, userId, branch_id || null, full_name || null, phone || null, position || null]
     );
     await writeAuditLog(req, 'EMPLOYEE_CREATE', 'employee', employeeId, { username, branch_id });
+    publishRealtime('employee.created', { id: employeeId, user_id: userId, username, full_name, phone, position, branch_id: branch_id || null }, branch_id || null);
     return res.status(201).json({ id: employeeId, user_id: userId, username, full_name, phone, position, branch_id });
   } catch (err) {
     return res.status(500).json({ error: 'employee_create_failed', detail: err.message });
@@ -741,6 +826,7 @@ app.patch('/employees/:id', authenticate, requirePermission('EMPLOYEE_MANAGE'), 
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
     await writeAuditLog(req, 'EMPLOYEE_UPDATE', 'employee', req.params.id, req.body);
+    publishRealtime('employee.updated', result.rows[0], result.rows[0].branch_id || null);
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ error: 'employee_update_failed', detail: err.message });
@@ -756,6 +842,7 @@ app.delete('/employees/:id', authenticate, requirePermission('EMPLOYEE_MANAGE'),
     if (emp.rows.length === 0) return res.status(404).json({ error: 'not_found' });
     await db.query('DELETE FROM employees WHERE id = $1', [req.params.id]);
     await writeAuditLog(req, 'EMPLOYEE_DELETE', 'employee', req.params.id, {});
+    publishRealtime('employee.deleted', { id: req.params.id }, empBranch || null);
     return res.json({ deleted: true });
   } catch (err) {
     return res.status(500).json({ error: 'employee_delete_failed', detail: err.message });
@@ -768,6 +855,7 @@ app.patch('/users/:id/status', authenticate, requirePermission('EMPLOYEE_MANAGE'
   const result = await db.query('UPDATE users SET is_active = $2 WHERE id = $1 RETURNING id, username, is_active', [req.params.id, is_active]);
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'USER_STATUS_UPDATE', 'user', req.params.id, { is_active });
+  publishRealtime('user.status.updated', { id: result.rows[0].id, username: result.rows[0].username, is_active }, null);
   return res.json(result.rows[0]);
 });
 
@@ -782,6 +870,7 @@ app.post('/product-categories', authenticate, requirePermission('PRODUCT_MANAGE'
   if (!name) return res.status(400).json({ error: 'name_required' });
   const result = await db.query('INSERT INTO product_categories (id, name) VALUES ($1, $2) RETURNING id, name', [randomUUID(), name]);
   await writeAuditLog(req, 'CATEGORY_CREATE', 'product_category', result.rows[0].id, { name });
+  publishRealtime('product_category.created', { id: result.rows[0].id, name }, null);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -805,35 +894,63 @@ app.get('/products', authenticate, requirePermission('PRODUCT_VIEW'), async (req
   const cacheKey = `products:${branch_id || 'all'}:${category_id || 'all'}:${q || ''}`;
   const cached = await redisGet(cacheKey);
   if (cached) return res.json(JSON.parse(cached));
-  const result = await db.query(`SELECT id, branch_id, category_id, sku, name, price, metadata FROM products ${where} ORDER BY name`, params);
+  if (branch_id) {
+    const branchParamIndex = params.length + 1;
+    const result = await db.query(
+      `SELECT p.id, p.branch_id, p.category_id, p.sku, p.name,
+              COALESCE(b.price, p.price) AS price,
+              p.price AS base_price,
+              b.price AS branch_price,
+              p.image_url,
+              p.metadata
+       FROM products p
+       LEFT JOIN product_branch_prices b ON b.product_id = p.id AND b.branch_id = $${branchParamIndex}
+       ${where}
+       ORDER BY p.name`,
+      [...params, branch_id]
+    );
+    await redisSet(cacheKey, JSON.stringify(result.rows), 60);
+    return res.json(result.rows);
+  }
+  const result = await db.query(
+    `SELECT id, branch_id, category_id, sku, name, price,
+            price AS base_price,
+            NULL::numeric AS branch_price,
+            image_url,
+            metadata
+     FROM products ${where} ORDER BY name`,
+    params
+  );
   await redisSet(cacheKey, JSON.stringify(result.rows), 60);
   return res.json(result.rows);
 });
 
 app.post('/products', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
-  const { branch_id, category_id, sku, name, price, metadata } = req.body || {};
+  const { branch_id, category_id, sku, name, price, metadata, image_url } = req.body || {};
   if (!branch_id || !name || price == null) return res.status(400).json({ error: 'branch_id_name_price_required' });
   if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
   const result = await db.query(
-    'INSERT INTO products (id, branch_id, category_id, sku, name, price, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, branch_id, category_id, sku, name, price, metadata',
-    [randomUUID(), branch_id, category_id || null, sku || null, name, Number(price), metadata || null]
+    'INSERT INTO products (id, branch_id, category_id, sku, name, price, image_url, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, branch_id, category_id, sku, name, price, image_url, metadata',
+    [randomUUID(), branch_id, category_id || null, sku || null, name, Number(price), image_url || null, metadata || null]
   );
   await writeAuditLog(req, 'PRODUCT_CREATE', 'product', result.rows[0].id, { name, branch_id });
+  publishRealtime('product.created', result.rows[0], branch_id);
   return res.status(201).json(result.rows[0]);
 });
 
 app.patch('/products/:id', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
-  const { category_id, sku, name, price, metadata } = req.body || {};
+  const { category_id, sku, name, price, metadata, image_url } = req.body || {};
   const prodBranchRes = await db.query('SELECT branch_id FROM products WHERE id = $1', [req.params.id]);
   const prodBranch = prodBranchRes.rows[0]?.branch_id || null;
   if (!prodBranch) return res.status(404).json({ error: 'not_found' });
   if (!(await ensureBranchAccess(req, prodBranch))) return res.status(403).json({ error: 'branch_forbidden' });
   const result = await db.query(
-    'UPDATE products SET category_id = COALESCE($2, category_id), sku = COALESCE($3, sku), name = COALESCE($4, name), price = COALESCE($5, price), metadata = COALESCE($6, metadata) WHERE id = $1 RETURNING id, branch_id, category_id, sku, name, price, metadata',
-    [req.params.id, category_id ?? null, sku ?? null, name ?? null, price ?? null, metadata ?? null]
+    'UPDATE products SET category_id = COALESCE($2, category_id), sku = COALESCE($3, sku), name = COALESCE($4, name), price = COALESCE($5, price), image_url = COALESCE($6, image_url), metadata = COALESCE($7, metadata) WHERE id = $1 RETURNING id, branch_id, category_id, sku, name, price, image_url, metadata',
+    [req.params.id, category_id ?? null, sku ?? null, name ?? null, price ?? null, image_url ?? null, metadata ?? null]
   );
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'PRODUCT_UPDATE', 'product', req.params.id, req.body);
+  publishRealtime('product.updated', result.rows[0], prodBranch);
   return res.json(result.rows[0]);
 });
 
@@ -845,74 +962,125 @@ app.delete('/products/:id', authenticate, requirePermission('PRODUCT_MANAGE'), a
   const result = await db.query('DELETE FROM products WHERE id = $1 RETURNING id', [req.params.id]);
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'PRODUCT_DELETE', 'product', req.params.id, {});
+  publishRealtime('product.deleted', { id: req.params.id }, prodBranch);
   return res.json({ deleted: true });
 });
 
-app.get('/topping-groups', authenticate, requirePermission('PRODUCT_VIEW'), async (req, res) => {
-  const result = await db.query('SELECT id, name FROM topping_groups ORDER BY name');
+
+// Inventory categories
+app.get('/inventory/categories', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
+  const result = await db.query('SELECT id, name, created_at FROM inventory_categories ORDER BY name');
   return res.json(result.rows);
 });
 
-app.post('/topping-groups', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
+app.post('/inventory/categories', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
-  const result = await db.query('INSERT INTO topping_groups (id, name) VALUES ($1, $2) RETURNING id, name', [randomUUID(), name]);
-  await writeAuditLog(req, 'TOPPING_GROUP_CREATE', 'topping_group', result.rows[0].id, { name });
+  const result = await db.query('INSERT INTO inventory_categories (id, name) VALUES ($1, $2) RETURNING id, name, created_at', [randomUUID(), name]);
+  await writeAuditLog(req, 'INVENTORY_CATEGORY_CREATE', 'inventory_category', result.rows[0].id, { name });
+  publishRealtime('inventory.category.created', result.rows[0], null);
   return res.status(201).json(result.rows[0]);
 });
 
-app.get('/toppings', authenticate, requirePermission('PRODUCT_VIEW'), async (req, res) => {
-  const { group_id } = req.query || {};
-  const params = [];
-  const filters = [];
-  if (group_id) { params.push(group_id); filters.push(`group_id = $${params.length}`); }
-  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const result = await db.query(`SELECT id, group_id, name, price FROM toppings ${where} ORDER BY name`, params);
-  return res.json(result.rows);
+app.patch('/inventory/categories/:id', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name_required' });
+  const result = await db.query('UPDATE inventory_categories SET name = $2 WHERE id = $1 RETURNING id, name, created_at', [req.params.id, name]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req, 'INVENTORY_CATEGORY_UPDATE', 'inventory_category', req.params.id, { name });
+  publishRealtime('inventory.category.updated', result.rows[0], null);
+  return res.json(result.rows[0]);
 });
 
-app.post('/toppings', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
-  const { group_id, name, price } = req.body || {};
-  if (!group_id || !name) return res.status(400).json({ error: 'group_id_name_required' });
-  const result = await db.query('INSERT INTO toppings (id, group_id, name, price) VALUES ($1, $2, $3, $4) RETURNING id, group_id, name, price', [randomUUID(), group_id, name, Number(price || 0)]);
-  await writeAuditLog(req, 'TOPPING_CREATE', 'topping', result.rows[0].id, { name, group_id });
-  return res.status(201).json(result.rows[0]);
+app.delete('/inventory/categories/:id', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const result = await db.query('DELETE FROM inventory_categories WHERE id = $1 RETURNING id', [req.params.id]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req, 'INVENTORY_CATEGORY_DELETE', 'inventory_category', req.params.id, {});
+  publishRealtime('inventory.category.deleted', { id: req.params.id }, null);
+  return res.json({ deleted: true });
 });
 
-app.post('/products/:id/toppings', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
-  const { topping_id, price_override } = req.body || {};
-  if (!topping_id) return res.status(400).json({ error: 'topping_id_required' });
-  const prodBranchRes = await db.query('SELECT branch_id FROM products WHERE id = $1', [req.params.id]);
-  const prodBranch = prodBranchRes.rows[0]?.branch_id || null;
-  if (!prodBranch) return res.status(404).json({ error: 'not_found' });
-  if (!(await ensureBranchAccess(req, prodBranch))) return res.status(403).json({ error: 'branch_forbidden' });
-  await db.query('INSERT INTO product_toppings (product_id, topping_id, price_override) VALUES ($1, $2, $3)', [req.params.id, topping_id, price_override ?? null]);
-  await writeAuditLog(req, 'PRODUCT_TOPPING_ADD', 'product', req.params.id, { topping_id, price_override });
-  return res.status(201).json({ product_id: req.params.id, topping_id, price_override });
+
+app.put('/products/:id/branch-price', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
+  const { branch_id, price } = req.body || {};
+  if (!branch_id || price == null) return res.status(400).json({ error: 'branch_id_price_required' });
+  if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  const productRes = await db.query('SELECT id FROM products WHERE id = $1', [req.params.id]);
+  if (productRes.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  const result = await db.query(
+    `INSERT INTO product_branch_prices (product_id, branch_id, price)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (product_id, branch_id) DO UPDATE SET price = EXCLUDED.price, updated_at = now()
+     RETURNING product_id, branch_id, price, updated_at`,
+    [req.params.id, branch_id, Number(price)]
+  );
+  await writeAuditLog(req, 'PRODUCT_BRANCH_PRICE_UPDATE', 'product', req.params.id, { branch_id, price: Number(price) });
+  publishRealtime('product.branch_price.updated', result.rows[0], branch_id);
+  return res.json(result.rows[0]);
+});
+
+app.post('/products/:id/image', authenticate, requirePermission('PRODUCT_MANAGE'), upload.single('image'), async (req, res) => {
+  try {
+    const prodRes = await db.query('SELECT branch_id FROM products WHERE id = $1', [req.params.id]);
+    const prodBranch = prodRes.rows[0]?.branch_id || null;
+    if (!prodBranch) return res.status(404).json({ error: 'not_found' });
+    if (!(await ensureBranchAccess(req, prodBranch))) return res.status(403).json({ error: 'branch_forbidden' });
+    if (!req.file?.filename) return res.status(400).json({ error: 'image_required' });
+    const imageUrl = `/uploads/products/${req.file.filename}`;
+    const result = await db.query(
+      'UPDATE products SET image_url = $2 WHERE id = $1 RETURNING id, image_url',
+      [req.params.id, imageUrl]
+    );
+    await writeAuditLog(req, 'PRODUCT_IMAGE_UPDATE', 'product', req.params.id, { image_url: imageUrl });
+    publishRealtime('product.image.updated', { id: req.params.id, image_url: imageUrl }, prodBranch);
+    return res.json(result.rows[0]);
+  } catch (err) {
+    return res.status(500).json({ error: 'image_upload_failed', detail: err.message });
+  }
 });
 
 // Inventory / Ingredients module
 app.get('/ingredients', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
-  const result = await db.query('SELECT id, name, unit FROM ingredients ORDER BY name');
+  const { category_id } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (category_id) {
+    params.push(category_id);
+    filters.push(`i.category_id = $${params.length}`);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT i.id, i.name, i.unit, i.category_id, c.name AS category_name
+     FROM ingredients i
+     LEFT JOIN inventory_categories c ON c.id = i.category_id
+     ${where}
+     ORDER BY i.name`,
+    params
+  );
   return res.json(result.rows);
 });
 
 app.post('/ingredients', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
-  const { name, unit } = req.body || {};
+  const { name, unit, category_id } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
-  const result = await db.query('INSERT INTO ingredients (id, name, unit) VALUES ($1, $2, $3) RETURNING id, name, unit', [randomUUID(), name, unit || null]);
-  await writeAuditLog(req, 'INGREDIENT_CREATE', 'ingredient', result.rows[0].id, { name, unit });
+  const result = await db.query(
+    'INSERT INTO ingredients (id, name, unit, category_id) VALUES ($1, $2, $3, $4) RETURNING id, name, unit, category_id',
+    [randomUUID(), name, unit || null, category_id || null]
+  );
+  await writeAuditLog(req, 'INGREDIENT_CREATE', 'ingredient', result.rows[0].id, { name, unit, category_id: category_id || null });
+  publishRealtime('ingredient.created', result.rows[0], null);
   return res.status(201).json(result.rows[0]);
 });
 
 app.patch('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
-  const { name, unit } = req.body || {};
+  const { name, unit, category_id } = req.body || {};
   const result = await db.query(
-    'UPDATE ingredients SET name = COALESCE($2, name), unit = COALESCE($3, unit) WHERE id = $1 RETURNING id, name, unit',
-    [req.params.id, name ?? null, unit ?? null]
+    'UPDATE ingredients SET name = COALESCE($2, name), unit = COALESCE($3, unit), category_id = COALESCE($4, category_id) WHERE id = $1 RETURNING id, name, unit, category_id',
+    [req.params.id, name ?? null, unit ?? null, category_id ?? null]
   );
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'INGREDIENT_UPDATE', 'ingredient', req.params.id, req.body);
+  publishRealtime('ingredient.updated', result.rows[0], null);
   return res.json(result.rows[0]);
 });
 
@@ -920,6 +1088,7 @@ app.delete('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE
   const result = await db.query('DELETE FROM ingredients WHERE id = $1 RETURNING id', [req.params.id]);
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'INGREDIENT_DELETE', 'ingredient', req.params.id, {});
+  publishRealtime('ingredient.deleted', { id: req.params.id }, null);
   return res.json({ deleted: true });
 });
 
@@ -969,6 +1138,7 @@ app.post('/inventory/inputs', authenticate, requirePermission('INVENTORY_MANAGE'
     }
     await client.query('COMMIT');
     await writeAuditLog(req, 'INVENTORY_INPUT_CREATE', 'inventory_input', null, { branch_id, count: results.length });
+    publishRealtime('inventory.input.created', { branch_id, count: results.length }, branch_id);
     return res.status(201).json({ created: results.length, items: results });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1011,6 +1181,7 @@ app.post('/inventory/transactions', authenticate, requirePermission('INVENTORY_M
     [randomUUID(), branch_id, ingredient_id, order_id || null, qty, unit_cost || null, transaction_type, reason || null, req.user.sub]
   );
   await writeAuditLog(req, 'INVENTORY_TX_CREATE', 'inventory_transaction', result.rows[0].id, { branch_id, ingredient_id, transaction_type, quantity: qty });
+  publishRealtime('inventory.transaction.created', result.rows[0], branch_id);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -1033,6 +1204,7 @@ app.post('/inventory/receipts', authenticate, requirePermission('INVENTORY_MANAG
       results.push(row.rows[0]);
     }
     await client.query('COMMIT');
+    publishRealtime('inventory.receipt.created', { branch_id, count: results.length }, branch_id);
     return res.status(201).json({ created: results.length, items: results });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1060,6 +1232,7 @@ app.post('/inventory/issues', authenticate, requirePermission('INVENTORY_MANAGE'
       results.push(row.rows[0]);
     }
     await client.query('COMMIT');
+    publishRealtime('inventory.issue.created', { branch_id, count: results.length }, branch_id);
     return res.status(201).json({ created: results.length, items: results });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1087,10 +1260,132 @@ app.post('/inventory/adjustments', authenticate, requirePermission('INVENTORY_MA
       results.push(row.rows[0]);
     }
     await client.query('COMMIT');
+    publishRealtime('inventory.adjustment.created', { branch_id, count: results.length }, branch_id);
     return res.status(201).json({ created: results.length, items: results });
   } catch (err) {
     await client.query('ROLLBACK');
     return res.status(500).json({ error: 'adjustment_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Stocktake & reconciliation
+app.get('/stocktakes', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
+  const { branch_id, status, from, to } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`branch_id = ANY($${params.length})`);
+  }
+  if (status) { params.push(status); filters.push(`status = $${params.length}`); }
+  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT id, branch_id, status, note, created_by, approved_by, created_at, approved_at
+     FROM stocktakes ${where} ORDER BY created_at DESC`,
+    params
+  );
+  return res.json(result.rows);
+});
+
+app.get('/stocktakes/:id/items', authenticate, requirePermission('INVENTORY_VIEW'), async (req, res) => {
+  const header = await db.query('SELECT branch_id FROM stocktakes WHERE id = $1', [req.params.id]);
+  const branchId = header.rows[0]?.branch_id || null;
+  if (!branchId) return res.status(404).json({ error: 'not_found' });
+  if (!(await ensureBranchAccess(req, branchId))) return res.status(403).json({ error: 'branch_forbidden' });
+  const result = await db.query(
+    `SELECT si.id, si.stocktake_id, si.ingredient_id, i.name AS ingredient_name, si.system_qty, si.actual_qty, si.delta_qty
+     FROM stocktake_items si
+     LEFT JOIN ingredients i ON i.id = si.ingredient_id
+     WHERE si.stocktake_id = $1 ORDER BY i.name`,
+    [req.params.id]
+  );
+  return res.json(result.rows);
+});
+
+app.post('/stocktakes', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const { branch_id, items = [], note } = req.body || {};
+  if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
+  if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  const ingredientIds = items.map(i => i.ingredient_id).filter(Boolean);
+  const onHandMap = await getIngredientBranchOnHand(branch_id, ingredientIds);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const stocktakeId = randomUUID();
+    await client.query(
+      'INSERT INTO stocktakes (id, branch_id, status, note, created_by) VALUES ($1, $2, $3, $4, $5)',
+      [stocktakeId, branch_id, 'DRAFT', note || null, req.user.sub]
+    );
+    const createdItems = [];
+    for (const item of items) {
+      if (!item.ingredient_id) continue;
+      const actual = Number(item.actual_qty || 0);
+      const system = onHandMap.get(item.ingredient_id) ?? 0;
+      const delta = Number(actual - system);
+      const row = await client.query(
+        `INSERT INTO stocktake_items (id, stocktake_id, ingredient_id, system_qty, actual_qty, delta_qty)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, stocktake_id, ingredient_id, system_qty, actual_qty, delta_qty`,
+        [randomUUID(), stocktakeId, item.ingredient_id, system, actual, delta]
+      );
+      createdItems.push(row.rows[0]);
+    }
+    await client.query('COMMIT');
+    const headerRes = await db.query(
+      'SELECT id, branch_id, status, note, created_by, created_at FROM stocktakes WHERE id = $1',
+      [stocktakeId]
+    );
+    await writeAuditLog(req, 'STOCKTAKE_CREATE', 'stocktake', stocktakeId, { branch_id, count: createdItems.length });
+    publishRealtime('inventory.stocktake.created', { id: stocktakeId, branch_id }, branch_id);
+    return res.status(201).json({ ...headerRes.rows[0], items: createdItems });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'stocktake_create_failed', detail: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/stocktakes/:id/approve', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
+  const header = await db.query('SELECT id, branch_id, status FROM stocktakes WHERE id = $1', [req.params.id]);
+  const stocktake = header.rows[0];
+  if (!stocktake) return res.status(404).json({ error: 'not_found' });
+  if (!(await ensureBranchAccess(req, stocktake.branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  if (stocktake.status !== 'DRAFT') return res.status(409).json({ error: 'invalid_status' });
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const itemsRes = await client.query('SELECT ingredient_id, delta_qty FROM stocktake_items WHERE stocktake_id = $1', [req.params.id]);
+    for (const item of itemsRes.rows) {
+      const delta = Number(item.delta_qty || 0);
+      if (delta === 0) continue;
+      await client.query(
+        `INSERT INTO inventory_transactions (id, branch_id, ingredient_id, quantity, unit_cost, transaction_type, reason, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [randomUUID(), stocktake.branch_id, item.ingredient_id, delta, null, 'ADJUST', `STOCKTAKE:${req.params.id}`, req.user.sub]
+      );
+    }
+    await client.query(
+      'UPDATE stocktakes SET status = $2, approved_by = $3, approved_at = now() WHERE id = $1',
+      [req.params.id, 'APPROVED', req.user.sub]
+    );
+    await client.query('COMMIT');
+    await writeAuditLog(req, 'STOCKTAKE_APPROVE', 'stocktake', req.params.id, { branch_id: stocktake.branch_id });
+    publishRealtime('inventory.stocktake.approved', { id: req.params.id, branch_id: stocktake.branch_id }, stocktake.branch_id);
+    return res.json({ approved: true, id: req.params.id });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'stocktake_approve_failed', detail: err.message });
   } finally {
     client.release();
   }
@@ -1125,6 +1420,43 @@ app.get('/reports/revenue', authenticate, requirePermission('REPORT_VIEW'), asyn
   return res.json(result.rows);
 });
 
+app.get('/reports/revenue/export', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
+  const { branch_id, from, to, group_by = 'day', format = 'csv' } = req.query || {};
+  const params = [];
+  const filters = ['payment_status = "PAID"'];
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`branch_id = ANY($${params.length})`);
+  }
+  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
+  const bucket = group_by === 'month' ? 'month' : 'day';
+  const result = await db.query(
+    `SELECT date_trunc('${bucket}', created_at) AS bucket, COUNT(*) AS orders, SUM(total_amount) AS revenue
+     FROM orders
+     WHERE ${filters.join(' AND ')}
+     GROUP BY bucket
+     ORDER BY bucket`,
+    params
+  );
+  if (format === 'xlsx') return await sendXlsx(res, result.rows, 'Revenue', 'revenue_report.xlsx');
+  if (format !== 'csv') return res.json(result.rows);
+  const csv = toCsv(result.rows, [
+    { key: 'bucket', label: 'bucket' },
+    { key: 'orders', label: 'orders' },
+    { key: 'revenue', label: 'revenue' }
+  ]);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="revenue_report.csv"');
+  return res.send(csv);
+});
+
 app.get('/reports/inventory', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
   const { branch_id, ingredient_id, from, to } = req.query || {};
   const params = [];
@@ -1156,6 +1488,47 @@ app.get('/reports/inventory', authenticate, requirePermission('REPORT_VIEW'), as
   return res.json(result.rows);
 });
 
+app.get('/reports/inventory/export', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
+  const { branch_id, ingredient_id, from, to, format = 'csv' } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`branch_id = ANY($${params.length})`);
+  }
+  if (ingredient_id) { params.push(ingredient_id); filters.push(`ingredient_id = $${params.length}`); }
+  if (from) { params.push(from); filters.push(`created_at >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`created_at <= $${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT ingredient_id,
+            SUM(CASE WHEN transaction_type = 'IN' THEN quantity ELSE 0 END) AS total_in,
+            SUM(CASE WHEN transaction_type = 'OUT' THEN quantity ELSE 0 END) AS total_out,
+            SUM(CASE WHEN transaction_type = 'ADJUST' THEN quantity ELSE 0 END) AS total_adjust
+     FROM inventory_transactions
+     ${where}
+     GROUP BY ingredient_id`,
+    params
+  );
+  if (format === 'xlsx') return await sendXlsx(res, result.rows, 'Inventory', 'inventory_report.xlsx');
+  if (format !== 'csv') return res.json(result.rows);
+  const csv = toCsv(result.rows, [
+    { key: 'ingredient_id', label: 'ingredient_id' },
+    { key: 'total_in', label: 'total_in' },
+    { key: 'total_out', label: 'total_out' },
+    { key: 'total_adjust', label: 'total_adjust' }
+  ]);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="inventory_report.csv"');
+  return res.send(csv);
+});
+
 app.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
   const { branch_id, from, to } = req.query || {};
   const params = [];
@@ -1185,6 +1558,44 @@ app.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), a
   return res.json(result.rows);
 });
 
+app.get('/reports/attendance/export', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
+  const { branch_id, from, to, format = 'csv' } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (from) { params.push(from); filters.push(`a.check_in >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`a.check_out <= $${params.length}`); }
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`e.branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`e.branch_id = ANY($${params.length})`);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT e.id AS employee_id, e.full_name, SUM(EXTRACT(EPOCH FROM (a.check_out - a.check_in)) / 3600) AS total_hours
+     FROM attendance a
+     JOIN employees e ON e.id = a.employee_id
+     ${where}
+     GROUP BY e.id, e.full_name
+     ORDER BY total_hours DESC`,
+    params
+  );
+  if (format === 'xlsx') return await sendXlsx(res, result.rows, 'Attendance', 'attendance_report.xlsx');
+  if (format !== 'csv') return res.json(result.rows);
+  const csv = toCsv(result.rows, [
+    { key: 'employee_id', label: 'employee_id' },
+    { key: 'full_name', label: 'full_name' },
+    { key: 'total_hours', label: 'total_hours' }
+  ]);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="attendance_report.csv"');
+  return res.send(csv);
+});
+
 // Shifts & Attendance
 app.get('/shifts', authenticate, requirePermission('ATTENDANCE_VIEW'), async (req, res) => {
   const result = await db.query('SELECT id, name, start_time, end_time FROM shifts ORDER BY start_time');
@@ -1199,6 +1610,7 @@ app.post('/shifts', authenticate, requirePermission('ATTENDANCE_MANAGE'), async 
     [randomUUID(), name, start_time, end_time]
   );
   await writeAuditLog(req, 'SHIFT_CREATE', 'shift', result.rows[0].id, { name });
+  publishRealtime('shift.created', result.rows[0], null);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -1218,6 +1630,7 @@ app.post('/attendance/checkin', authenticate, requirePermission('ATTENDANCE_MANA
     [randomUUID(), employee_id, shift_id]
   );
   await writeAuditLog(req, 'ATTENDANCE_CHECKIN', 'attendance', result.rows[0].id, { employee_id, shift_id });
+  publishRealtime('attendance.checkin', result.rows[0], empBranch);
   return res.status(201).json(result.rows[0]);
 });
 
@@ -1233,6 +1646,7 @@ app.post('/attendance/checkout', authenticate, requirePermission('ATTENDANCE_MAN
   );
   if (result.rows.length === 0) return res.status(409).json({ error: 'not_checked_in' });
   await writeAuditLog(req, 'ATTENDANCE_CHECKOUT', 'attendance', result.rows[0].id, { employee_id });
+  publishRealtime('attendance.checkout', result.rows[0], empBranch);
   return res.json(result.rows[0]);
 });
 

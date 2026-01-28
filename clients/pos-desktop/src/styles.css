@@ -70,6 +70,12 @@ body {
   color: var(--text);
 }
 
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
 .layout {
   flex: 1;
   display: grid;

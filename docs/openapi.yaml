@@ -521,87 +521,6 @@ paths:
         '201':
           description: Category created
 
-  /topping-groups:
-    get:
-      summary: List topping groups
-      responses:
-        '200':
-          description: Topping groups
-    post:
-      summary: Create topping group
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        '201':
-          description: Topping group created
-
-  /toppings:
-    get:
-      summary: List toppings
-      parameters:
-        - name: group_id
-          in: query
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Toppings list
-    post:
-      summary: Create topping
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [group_id, name]
-              properties:
-                group_id:
-                  type: string
-                  format: uuid
-                name:
-                  type: string
-                price:
-                  type: number
-      responses:
-        '201':
-          description: Topping created
-
-  /products/{product_id}/toppings:
-    post:
-      summary: Attach topping to product
-      parameters:
-        - name: product_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [topping_id]
-              properties:
-                topping_id:
-                  type: string
-                  format: uuid
-                price_override:
-                  type: number
-      responses:
-        '201':
-          description: Attached
-
   /inventory/transactions:
     get:
       summary: List inventory transactions
@@ -1012,6 +931,100 @@ paths:
         responses:
           '201':
             description: Shift created
+
+    /reports/revenue/export:
+      get:
+        summary: Export revenue report
+        parameters:
+          - name: branch_id
+            in: query
+            schema:
+              type: string
+              format: uuid
+          - name: from
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: group_by
+            in: query
+            schema:
+              type: string
+              enum: [day, month]
+          - name: format
+            in: query
+            schema:
+              type: string
+              enum: [csv, json, xlsx]
+        responses:
+          '200':
+            description: CSV or JSON export
+
+    /reports/inventory/export:
+      get:
+        summary: Export inventory report
+        parameters:
+          - name: branch_id
+            in: query
+            schema:
+              type: string
+              format: uuid
+          - name: ingredient_id
+            in: query
+            schema:
+              type: string
+              format: uuid
+          - name: from
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: format
+            in: query
+            schema:
+              type: string
+              enum: [csv, json, xlsx]
+        responses:
+          '200':
+            description: CSV or JSON export
+
+    /reports/attendance/export:
+      get:
+        summary: Export attendance report
+        parameters:
+          - name: branch_id
+            in: query
+            schema:
+              type: string
+              format: uuid
+          - name: from
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            schema:
+              type: string
+              format: date-time
+          - name: format
+            in: query
+            schema:
+              type: string
+              enum: [csv, json, xlsx]
+        responses:
+          '200':
+            description: CSV or JSON export
 
     /attendance/checkin:
       post:

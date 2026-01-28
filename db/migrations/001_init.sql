@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS tables (
   status TEXT DEFAULT 'AVAILABLE'
 );
 
--- Products & Toppings
+-- Products
 CREATE TABLE IF NOT EXISTS product_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL
@@ -107,25 +107,6 @@ CREATE TABLE IF NOT EXISTS products (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id, id);
-
-CREATE TABLE IF NOT EXISTS topping_groups (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT
-);
-
-CREATE TABLE IF NOT EXISTS toppings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  group_id UUID REFERENCES topping_groups(id),
-  name TEXT,
-  price NUMERIC(12,2)
-);
-
-CREATE TABLE IF NOT EXISTS product_toppings (
-  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
-  topping_id UUID REFERENCES toppings(id) ON DELETE CASCADE,
-  price_override NUMERIC(12,2),
-  PRIMARY KEY(product_id, topping_id)
-);
 
 -- Orders & items
 CREATE TABLE IF NOT EXISTS orders (
@@ -154,7 +135,6 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   unit_price NUMERIC(12,2) NOT NULL,
   subtotal NUMERIC(12,2) NOT NULL,
-  toppings JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);

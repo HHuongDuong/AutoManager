@@ -11,11 +11,14 @@ import {
   ActivityIndicator
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { BluetoothManager, BluetoothEscposPrinter } from 'react-native-thermal-receipt-printer';
 const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
 export default function App() {
   const [apiBase, setApiBase] = useState('http://localhost:3000');
+  const [printerTarget, setPrinterTarget] = useState('');
+  const [bluetoothDevices, setBluetoothDevices] = useState([]);
+  const [bluetoothConnected, setBluetoothConnected] = useState(false);
   const [token, setToken] = useState('');
   const [branchId, setBranchId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -29,7 +32,6 @@ export default function App() {
   const [inventoryInputs, setInventoryInputs] = useState([]);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [wsStatus, setWsStatus] = useState('disconnected');
-
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -48,10 +50,12 @@ export default function App() {
       const savedBranch = await AsyncStorage.getItem('branchId');
       const savedEmployee = await AsyncStorage.getItem('employeeId');
       const savedQueue = await AsyncStorage.getItem('orderQueue');
+      const savedPrinterTarget = await AsyncStorage.getItem('printerTarget');
       if (savedBase) setApiBase(savedBase);
       if (savedToken) setToken(savedToken);
       if (savedBranch) setBranchId(savedBranch);
       if (savedEmployee) setEmployeeId(savedEmployee);
+      if (savedPrinterTarget) setPrinterTarget(savedPrinterTarget);
       if (savedQueue) {
         try {
           setOrderQueue(JSON.parse(savedQueue));
@@ -63,6 +67,11 @@ export default function App() {
     };
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!printerTarget) return;
+    connectBluetooth(printerTarget);
+  }, [printerTarget]);
 
   useEffect(() => {
     if (!token) return;
@@ -166,6 +175,73 @@ export default function App() {
 
   const persistSetting = async (key, value) => {
     await AsyncStorage.setItem(key, value);
+  };
+
+  const scanBluetooth = async () => {
+    try {
+      const devices = await BluetoothManager.enableBluetooth();
+      const list = (devices || []).map((device) => {
+        const parts = String(device).split('#');
+        return { name: parts[0] || 'Unknown', address: parts[1] || parts[0] };
+      });
+      setBluetoothDevices(list);
+    } catch {
+      setBluetoothDevices([]);
+      setStatusMessage('Không thể bật Bluetooth.');
+    }
+  };
+
+  const connectBluetooth = async (address) => {
+    if (!address) return;
+    try {
+      await BluetoothManager.connect(address);
+      setBluetoothConnected(true);
+      setStatusMessage('Đã kết nối máy in Bluetooth.');
+    } catch {
+      setBluetoothConnected(false);
+      setStatusMessage('Không thể kết nối máy in.');
+    }
+  };
+
+  const disconnectBluetooth = async () => {
+    try {
+      await BluetoothManager.disconnect();
+      setBluetoothConnected(false);
+      setStatusMessage('Đã ngắt kết nối máy in.');
+    } catch {
+      setStatusMessage('Không thể ngắt kết nối máy in.');
+    }
+  };
+
+  const printReceipt = async (order, itemsOverride) => {
+    try {
+      if (printerTarget && !bluetoothConnected) {
+        await connectBluetooth(printerTarget);
+      }
+      const payload = order?.id
+        ? { order_id: order.id }
+        : {
+          branch_id: branchId || null,
+          items: itemsOverride || order?.items || [],
+          created_at: order?.created_at || new Date().toISOString(),
+          total_amount: order?.total_amount || null,
+          payments: order?.payments || []
+        };
+      const res = await fetch(`${apiBase}/receipts/format`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('receipt_failed');
+      const data = await res.json();
+      await BluetoothEscposPrinter.printText(data.text || '', { encoding: 'GBK' });
+      setStatusMessage('Đã gửi lệnh in hóa đơn.');
+    } catch (err) {
+      setStatusMessage('Không thể in hóa đơn.');
+    }
   };
 
   const makeId = () => `q_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -339,6 +415,10 @@ export default function App() {
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('order_failed');
+      const data = await res.json();
+      if (payNow) {
+        await printReceipt(data, payload.items);
+      }
       setCart([]);
       setCashReceived('0');
       setShowPayment(false);
@@ -433,6 +513,70 @@ export default function App() {
                 placeholder="branch_id"
               />
             </View>
+          </View>
+          <View style={styles.row}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Máy in Bluetooth</Text>
+              <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
+              <View style={styles.row}>
+                <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
+                  <Text style={styles.outlineText}>Quét thiết bị</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
+                  <Text style={styles.outlineText}>Ngắt kết nối</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+          <View style={styles.row}>
+            <View style={styles.field}>
+              <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
+              <TextInput
+                style={styles.input}
+                value={printerTarget}
+                onChangeText={(value) => { setPrinterTarget(value); persistSetting('printerTarget', value); }}
+                placeholder="00:11:22:33:44:55"
+              />
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
+                <Text style={styles.primaryText}>Kết nối</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {bluetoothDevices.length > 0 && (
+            <View style={styles.row}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
+                <View style={styles.productList}>
+                  {bluetoothDevices.map(device => (
+                    <TouchableOpacity
+                      key={device.address}
+                      style={styles.productCard}
+                      onPress={() => {
+                        setPrinterTarget(device.address);
+                        persistSetting('printerTarget', device.address);
+                        connectBluetooth(device.address);
+                      }}
+                    >
+                      <View>
+                        <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
+                        <Text style={styles.productPrice}>{device.address}</Text>
+                      </View>
+                      <Text style={styles.addBtn}>Kết nối</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+          <View style={styles.row}>
+            <TouchableOpacity style={styles.outlineBtn} onPress={() => printReceipt(null, cart.map(item => ({
+              name: item.name,
+              quantity: item.quantity,
+              unit_price: item.price,
+              subtotal: item.price * item.quantity
+            })))}>
+              <Text style={styles.outlineText}>In thử</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.row}>
             <View style={styles.field}>

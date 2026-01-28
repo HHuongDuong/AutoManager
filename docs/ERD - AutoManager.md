@@ -108,7 +108,7 @@ entity order_items {
 
 orders ||--o{ order_items
 
-' PRODUCT & TOPPING
+' PRODUCT
 entity product_categories {
   +id : UUID <<PK>>
   name : varchar
@@ -123,28 +123,6 @@ entity products {
 
 product_categories ||--o{ products
 products ||--o{ order_items
-
-entity topping_groups {
-  +id : UUID <<PK>>
-  name : varchar
-}
-
-entity toppings {
-  +id : UUID <<PK>>
-  group_id : UUID <<FK>>
-  name : varchar
-  price : decimal
-}
-
-entity product_toppings {
-  +product_id : UUID <<FK>>
-  +topping_id : UUID <<FK>>
-  price_override : decimal
-}
-
-topping_groups ||--o{ toppings
-products ||--o{ product_toppings
-toppings ||--o{ product_toppings
 
 ' INVENTORY
 entity ingredients {
@@ -171,7 +149,7 @@ orders ||--o{ inventory_transactions
 ## Consolidated ERD notes
 - Merged concepts: split `users` and `employees` (employee profile linked to user account). RBAC uses `user_roles`, `roles`, `permissions`, `role_permissions`.
 - Orders support `order_type` (DINE_IN/TAKEAWAY), `table_id` optional for TAKEAWAY. Include `client_id` and `idempotency_key` for offline sync and idempotency.
-- Products, toppings, and product_toppings normalized for price overrides.
+- Products use categories.
 - Inventory modeled by `ingredients` + `inventory_transactions` with optional link to `order_id` for processing traces (but system won't auto-decrement inventory on sale by policy).
 - Audit logs kept for 1 year by retention policy.
 
@@ -221,14 +199,10 @@ CREATE TABLE attendance (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), employee
 -- Tables (restaurant)
 CREATE TABLE tables (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), branch_id UUID REFERENCES branches(id), name TEXT, status TEXT DEFAULT 'AVAILABLE');
 
--- Products & Toppings
+-- Products
 CREATE TABLE product_categories (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL);
 CREATE TABLE products (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), branch_id UUID REFERENCES branches(id), category_id UUID REFERENCES product_categories(id), sku TEXT, name TEXT NOT NULL, price NUMERIC(12,2) NOT NULL, metadata JSONB, created_at TIMESTAMP WITH TIME ZONE DEFAULT now());
 CREATE INDEX idx_products_branch ON products(branch_id, id);
-
-CREATE TABLE topping_groups (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT);
-CREATE TABLE toppings (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), group_id UUID REFERENCES topping_groups(id), name TEXT, price NUMERIC(12,2));
-CREATE TABLE product_toppings (product_id UUID REFERENCES products(id) ON DELETE CASCADE, topping_id UUID REFERENCES toppings(id) ON DELETE CASCADE, price_override NUMERIC(12,2), PRIMARY KEY(product_id, topping_id));
 
 -- Orders & items
 CREATE TABLE orders (
@@ -257,7 +231,6 @@ CREATE TABLE order_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   unit_price NUMERIC(12,2) NOT NULL,
   subtotal NUMERIC(12,2) NOT NULL,
-  toppings JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 CREATE INDEX idx_order_items_order ON order_items(order_id);

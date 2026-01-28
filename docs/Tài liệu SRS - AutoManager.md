@@ -105,7 +105,6 @@ AutoManager POS là hệ thống client–server, gồm:
 
 *   FR-14: Quản lý món ăn / đồ uống / combo
 *   FR-15: Phân loại sản phẩm
-*   FR-16: Quản lý topping & nhóm topping
 
 ### 3.6 Quản lý kho nguyên liệu
 
