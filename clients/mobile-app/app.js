@@ -27,9 +27,13 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showLogin, setShowLogin] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
   const [orderQueue, setOrderQueue] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [inventoryInputs, setInventoryInputs] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [tables, setTables] = useState([]);
+  const [selectedTableId, setSelectedTableId] = useState('');
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [wsStatus, setWsStatus] = useState('disconnected');
   const [products, setProducts] = useState([]);
@@ -42,6 +46,38 @@ export default function App() {
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
+
+  const getDeviceLocation = () => new Promise((resolve, reject) => {
+    if (!navigator?.geolocation) {
+      reject(new Error('geolocation_unavailable'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+    );
+  });
+
+  const pickShiftIdByTime = () => {
+    if (!shifts.length) return '';
+    const now = new Date();
+    const toMinutes = (timeStr) => {
+      const [h, m] = String(timeStr).split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let selected = shifts.find(shift => {
+      const start = toMinutes(shift.start_time);
+      const end = toMinutes(shift.end_time);
+      return nowMin >= start && nowMin <= end;
+    });
+    if (selected) return selected.id;
+    selected = shifts
+      .map(shift => ({ shift, diff: Math.abs(nowMin - toMinutes(shift.start_time)) }))
+      .sort((a, b) => a.diff - b.diff)[0]?.shift;
+    return selected?.id || '';
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -67,6 +103,10 @@ export default function App() {
     };
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!token) setShowLogin(true);
+  }, [token]);
 
   useEffect(() => {
     if (!printerTarget) return;
@@ -114,6 +154,30 @@ export default function App() {
   }, [apiBase, token]);
 
   useEffect(() => {
+    if (!token) return;
+    const fetchShifts = async () => {
+      try {
+        if (token === 'demo-token') {
+          setShifts([
+            { id: 'demo-1', name: 'Ca sáng', start_time: '08:00', end_time: '12:00' },
+            { id: 'demo-2', name: 'Ca chiều', start_time: '13:00', end_time: '17:00' }
+          ]);
+          return;
+        }
+        const res = await fetch(`${apiBase}/shifts`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setShifts(data || []);
+      } catch (err) {
+        setShifts([]);
+      }
+    };
+    fetchShifts();
+  }, [apiBase, token]);
+
+  useEffect(() => {
     if (!token || !branchId) return;
     const fetchInputs = async () => {
       try {
@@ -131,6 +195,29 @@ export default function App() {
     };
     fetchInputs();
   }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (!token || !branchId) return;
+    const fetchTables = async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set('branch_id', branchId);
+        const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setTables(data || []);
+      } catch (err) {
+        setTables([]);
+      }
+    };
+    fetchTables();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (orderType !== 'DINE_IN') setSelectedTableId('');
+  }, [orderType]);
 
   const refreshInputs = async () => {
     if (!token || !branchId) return;
@@ -325,6 +412,14 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
+    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
+      await AsyncStorage.setItem('token', 'demo-token');
+      await persistSetting('apiBase', apiBase);
+      setToken('demo-token');
+      setShowLogin(false);
+      setStatusMessage('Đang dùng tài khoản demo offline.');
+      return;
+    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -342,22 +437,69 @@ export default function App() {
     }
   };
 
-  const handleCheckIn = async () => {
-    if (!employeeId || !shiftId) {
-      setStatusMessage('Cần employee_id và shift_id để check-in.');
+  const handleChangePassword = async () => {
+    if (!passwordForm.old_password || !passwordForm.new_password) {
+      setStatusMessage('Cần mật khẩu cũ và mật khẩu mới.');
+      return;
+    }
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setStatusMessage('Xác nhận mật khẩu mới không khớp.');
       return;
     }
     try {
+      const res = await fetch(`${apiBase}/users/me/password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          old_password: passwordForm.old_password,
+          new_password: passwordForm.new_password
+        })
+      });
+      if (!res.ok) throw new Error('password_failed');
+      setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
+      setStatusMessage('Đã đổi mật khẩu.');
+    } catch (err) {
+      setStatusMessage('Không thể đổi mật khẩu.');
+    }
+  };
+
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('token');
+    setToken('');
+    setShowLogin(true);
+  };
+
+  const handleCheckIn = async () => {
+    if (!employeeId) {
+      setStatusMessage('Cần employee_id để check-in.');
+      return;
+    }
+    const autoShiftId = pickShiftIdByTime();
+    if (!autoShiftId) {
+      setStatusMessage('Không tìm thấy ca làm phù hợp.');
+      return;
+    }
+    try {
+      const location = await getDeviceLocation();
       const res = await fetch(`${apiBase}/attendance/checkin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ employee_id: employeeId, shift_id: shiftId })
+        body: JSON.stringify({ employee_id: employeeId, shift_id: autoShiftId, ...location })
       });
       if (!res.ok) throw new Error('checkin_failed');
-      setStatusMessage('Check-in thành công.');
+      const data = await res.json();
+      setShiftId(autoShiftId);
+      if (data?.check_in_status) {
+        setStatusMessage(`Check-in ${data.check_in_status === 'EARLY' ? 'sớm' : 'muộn'} (${data.check_in_diff_minutes} phút).`);
+      } else {
+        setStatusMessage('Check-in thành công.');
+      }
     } catch (err) {
       setStatusMessage('Không thể check-in.');
     }
@@ -369,16 +511,22 @@ export default function App() {
       return;
     }
     try {
+      const location = await getDeviceLocation();
       const res = await fetch(`${apiBase}/attendance/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ employee_id: employeeId })
+        body: JSON.stringify({ employee_id: employeeId, ...location })
       });
       if (!res.ok) throw new Error('checkout_failed');
-      setStatusMessage('Check-out thành công.');
+      const data = await res.json();
+      if (data?.check_out_status) {
+        setStatusMessage(`Check-out ${data.check_out_status === 'EARLY' ? 'sớm' : 'muộn'} (${data.check_out_diff_minutes} phút).`);
+      } else {
+        setStatusMessage('Check-out thành công.');
+      }
     } catch (err) {
       setStatusMessage('Không thể check-out.');
     }
@@ -389,6 +537,10 @@ export default function App() {
       setStatusMessage('Cần branch_id để tạo đơn.');
       return;
     }
+    if (orderType === 'DINE_IN' && !selectedTableId) {
+      setStatusMessage('Cần chọn bàn cho đơn tại chỗ.');
+      return;
+    }
     if (cart.length === 0) {
       setStatusMessage('Chưa có món trong giỏ.');
       return;
@@ -397,6 +549,7 @@ export default function App() {
       const payload = {
         branch_id: branchId,
         order_type: orderType,
+        table_id: orderType === 'DINE_IN' ? selectedTableId : null,
         items: cart.map(item => ({
           product_id: item.id.startsWith('p-') ? null : item.id,
           name: item.name,
@@ -422,11 +575,13 @@ export default function App() {
       setCart([]);
       setCashReceived('0');
       setShowPayment(false);
+      setSelectedTableId('');
       setStatusMessage('Tạo đơn thành công.');
     } catch (err) {
       const payload = {
         branch_id: branchId,
         order_type: orderType,
+        table_id: orderType === 'DINE_IN' ? selectedTableId : null,
         items: cart.map(item => ({
           product_id: item.id.startsWith('p-') ? null : item.id,
           name: item.name,
@@ -439,6 +594,7 @@ export default function App() {
       setCart([]);
       setCashReceived('0');
       setShowPayment(false);
+      setSelectedTableId('');
       setStatusMessage('Đang offline: đơn đã vào hàng đợi.');
     }
   };
@@ -484,140 +640,136 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.header}>
-          <Text style={styles.brand}>AutoManager</Text>
-          <TouchableOpacity style={styles.ghostBtn} onPress={() => setShowLogin(true)}>
-            <Text style={styles.ghostText}>{token ? 'Cài đặt' : 'Đăng nhập'}</Text>
-          </TouchableOpacity>
-        </View>
+      {token ? (
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <View style={styles.header}>
+            <Text style={styles.brand}>AutoManager</Text>
+            <TouchableOpacity style={styles.ghostBtn} onPress={() => setShowLogin(true)}>
+              <Text style={styles.ghostText}>{token ? 'Cài đặt' : 'Đăng nhập'}</Text>
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Thiết lập nhanh</Text>
-          <View style={styles.row}>
-            <View style={styles.field}>
-              <Text style={styles.label}>API Base</Text>
-              <TextInput
-                style={styles.input}
-                value={apiBase}
-                onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
-                placeholder="http://localhost:3000"
-              />
-            </View>
-            <View style={styles.field}>
-              <Text style={styles.label}>Branch ID</Text>
-              <TextInput
-                style={styles.input}
-                value={branchId}
-                onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
-                placeholder="branch_id"
-              />
-            </View>
-          </View>
-          <View style={styles.row}>
-            <View style={styles.field}>
-              <Text style={styles.label}>Máy in Bluetooth</Text>
-              <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
-              <View style={styles.row}>
-                <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
-                  <Text style={styles.outlineText}>Quét thiết bị</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
-                  <Text style={styles.outlineText}>Ngắt kết nối</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-          <View style={styles.row}>
-            <View style={styles.field}>
-              <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
-              <TextInput
-                style={styles.input}
-                value={printerTarget}
-                onChangeText={(value) => { setPrinterTarget(value); persistSetting('printerTarget', value); }}
-                placeholder="00:11:22:33:44:55"
-              />
-              <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
-                <Text style={styles.primaryText}>Kết nối</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          {bluetoothDevices.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Thiết lập nhanh</Text>
             <View style={styles.row}>
               <View style={styles.field}>
-                <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
-                <View style={styles.productList}>
-                  {bluetoothDevices.map(device => (
-                    <TouchableOpacity
-                      key={device.address}
-                      style={styles.productCard}
-                      onPress={() => {
-                        setPrinterTarget(device.address);
-                        persistSetting('printerTarget', device.address);
-                        connectBluetooth(device.address);
-                      }}
-                    >
-                      <View>
-                        <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
-                        <Text style={styles.productPrice}>{device.address}</Text>
-                      </View>
-                      <Text style={styles.addBtn}>Kết nối</Text>
-                    </TouchableOpacity>
-                  ))}
+                <Text style={styles.label}>API Base</Text>
+                <TextInput
+                  style={styles.input}
+                  value={apiBase}
+                  onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
+                  placeholder="http://localhost:3000"
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>Branch ID</Text>
+                <TextInput
+                  style={styles.input}
+                  value={branchId}
+                  onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
+                  placeholder="branch_id"
+                />
+              </View>
+            </View>
+            <View style={styles.row}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Máy in Bluetooth</Text>
+                <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
+                    <Text style={styles.outlineText}>Quét thiết bị</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
+                    <Text style={styles.outlineText}>Ngắt kết nối</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
-          )}
-          <View style={styles.row}>
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => printReceipt(null, cart.map(item => ({
-              name: item.name,
-              quantity: item.quantity,
-              unit_price: item.price,
-              subtotal: item.price * item.quantity
-            })))}>
-              <Text style={styles.outlineText}>In thử</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.row}>
-            <View style={styles.field}>
-              <Text style={styles.label}>Employee ID</Text>
-              <TextInput
-                style={styles.input}
-                value={employeeId}
-                onChangeText={(value) => { setEmployeeId(value); persistSetting('employeeId', value); }}
-                placeholder="employee_id"
-              />
+            <View style={styles.row}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
+                <TextInput
+                  style={styles.input}
+                  value={printerTarget}
+                  onChangeText={(value) => { setPrinterTarget(value); persistSetting('printerTarget', value); }}
+                  placeholder="00:11:22:33:44:55"
+                />
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
+                  <Text style={styles.primaryText}>Kết nối</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.field}>
-              <Text style={styles.label}>Shift ID</Text>
-              <TextInput
-                style={styles.input}
-                value={shiftId}
-                onChangeText={(value) => setShiftId(value)}
-                placeholder="shift_id"
-              />
+            {bluetoothDevices.length > 0 && (
+              <View style={styles.row}>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
+                  <View style={styles.productList}>
+                    {bluetoothDevices.map(device => (
+                      <TouchableOpacity
+                        key={device.address}
+                        style={styles.productCard}
+                        onPress={() => {
+                          setPrinterTarget(device.address);
+                          persistSetting('printerTarget', device.address);
+                          connectBluetooth(device.address);
+                        }}
+                      >
+                        <View>
+                          <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
+                          <Text style={styles.productPrice}>{device.address}</Text>
+                        </View>
+                        <Text style={styles.addBtn}>Kết nối</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.outlineBtn} onPress={() => printReceipt(null, cart.map(item => ({
+                name: item.name,
+                quantity: item.quantity,
+                unit_price: item.price,
+                subtotal: item.price * item.quantity
+              })))}>
+                <Text style={styles.outlineText}>In thử</Text>
+              </TouchableOpacity>
             </View>
+            <View style={styles.row}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Employee ID</Text>
+                <TextInput
+                  style={styles.input}
+                  value={employeeId}
+                  onChangeText={(value) => { setEmployeeId(value); persistSetting('employeeId', value); }}
+                  placeholder="employee_id"
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.label}>Ca làm</Text>
+                <Text style={styles.muted}>Tự động theo giờ hiện tại</Text>
+              </View>
+            </View>
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleCheckIn}>
+                <Text style={styles.primaryText}>Check-in</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.outlineBtn} onPress={handleCheckOut}>
+                <Text style={styles.outlineText}>Check-out</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.outlineBtn} onPress={processQueue}>
+                <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.muted}>Realtime: {wsStatus}</Text>
           </View>
-          <View style={styles.row}>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleCheckIn}>
-              <Text style={styles.primaryText}>Check-in</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={handleCheckOut}>
-              <Text style={styles.outlineText}>Check-out</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.row}>
-            <TouchableOpacity style={styles.outlineBtn} onPress={processQueue}>
-              <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.muted}>Realtime: {wsStatus}</Text>
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>POS Order</Text>
-          <View style={styles.segmented}>
-            {['DINE_IN', 'TAKE_AWAY', 'DELIVERY'].map(type => (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>POS Order</Text>
+            <View style={styles.segmented}>
+              {['DINE_IN', 'TAKE_AWAY', 'DELIVERY'].map(type => (
               <TouchableOpacity
                 key={type}
                 style={[styles.segment, orderType === type && styles.segmentActive]}
@@ -627,6 +779,36 @@ export default function App() {
               </TouchableOpacity>
             ))}
           </View>
+          {orderType === 'DINE_IN' && (
+            <View style={styles.row}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Chọn bàn</Text>
+                <TextInput
+                  style={styles.input}
+                  value={selectedTableId}
+                  onChangeText={setSelectedTableId}
+                  placeholder="table_id"
+                />
+                {tables.filter(table => table.status === 'AVAILABLE').length > 0 && (
+                  <View style={styles.productList}>
+                    {tables.filter(table => table.status === 'AVAILABLE').map(table => (
+                      <TouchableOpacity
+                        key={table.id}
+                        style={styles.productCard}
+                        onPress={() => setSelectedTableId(table.id)}
+                      >
+                        <View>
+                          <Text style={styles.productName}>{table.name}</Text>
+                          <Text style={styles.productPrice}>{table.status}</Text>
+                        </View>
+                        <Text style={styles.addBtn}>Chọn</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
           <TextInput
             style={styles.input}
             placeholder="Tìm món..."
@@ -730,7 +912,16 @@ export default function App() {
           ))}
           {inventoryInputs.length === 0 && <Text style={styles.muted}>Chưa có phiếu nhập kho.</Text>}
         </View>
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        <View style={styles.loginOnly}>
+          <Text style={styles.cardTitle}>Vui lòng đăng nhập</Text>
+          <Text style={styles.muted}>Bạn cần đăng nhập để sử dụng ứng dụng.</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowLogin(true)}>
+            <Text style={styles.primaryText}>Đăng nhập</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Modal visible={showPayment} transparent animationType="slide">
         <View style={styles.modalBackdrop}>
@@ -763,7 +954,19 @@ export default function App() {
       <Modal visible={showLogin} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.cardTitle}>Đăng nhập</Text>
+            <Text style={styles.cardTitle}>Cài đặt & Đăng nhập</Text>
+            <TextInput
+              style={styles.input}
+              value={apiBase}
+              onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
+              placeholder="API Base"
+            />
+            <TextInput
+              style={styles.input}
+              value={branchId}
+              onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
+              placeholder="Branch ID"
+            />
             <TextInput
               style={styles.input}
               value={loginForm.username}
@@ -777,10 +980,48 @@ export default function App() {
               placeholder="Password"
               secureTextEntry
             />
+            <Text style={styles.muted}>Demo offline: admin / admin123</Text>
+            {token && (
+              <>
+                <TextInput
+                  style={styles.input}
+                  value={passwordForm.old_password}
+                  onChangeText={(value) => setPasswordForm({ ...passwordForm, old_password: value })}
+                  placeholder="Mật khẩu cũ"
+                  secureTextEntry
+                />
+                <TextInput
+                  style={styles.input}
+                  value={passwordForm.new_password}
+                  onChangeText={(value) => setPasswordForm({ ...passwordForm, new_password: value })}
+                  placeholder="Mật khẩu mới"
+                  secureTextEntry
+                />
+                <TextInput
+                  style={styles.input}
+                  value={passwordForm.confirm_password}
+                  onChangeText={(value) => setPasswordForm({ ...passwordForm, confirm_password: value })}
+                  placeholder="Xác nhận mật khẩu mới"
+                  secureTextEntry
+                />
+              </>
+            )}
             <View style={styles.row}>
-              <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowLogin(false)}>
-                <Text style={styles.outlineText}>Đóng</Text>
-              </TouchableOpacity>
+              {token && (
+                <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowLogin(false)}>
+                  <Text style={styles.outlineText}>Đóng</Text>
+                </TouchableOpacity>
+              )}
+              {token && (
+                <TouchableOpacity style={styles.outlineBtn} onPress={handleLogout}>
+                  <Text style={styles.outlineText}>Đăng xuất</Text>
+                </TouchableOpacity>
+              )}
+              {token && (
+                <TouchableOpacity style={styles.outlineBtn} onPress={handleChangePassword}>
+                  <Text style={styles.outlineText}>Đổi mật khẩu</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin}>
                 <Text style={styles.primaryText}>Đăng nhập</Text>
               </TouchableOpacity>
@@ -796,6 +1037,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f172a'
+  },
+  loginOnly: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+    gap: 12
   },
   scroll: {
     padding: 20,

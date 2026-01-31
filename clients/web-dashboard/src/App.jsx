@@ -17,6 +17,8 @@ const navItems = [
   { id: 'menu', label: 'Thực đơn' },
   { id: 'inventory', label: 'Kho' },
   { id: 'hr', label: 'Nhân sự' },
+  { id: 'branches', label: 'Chi nhánh' },
+  { id: 'rbac', label: 'Phân quyền' },
   { id: 'reports', label: 'Báo cáo' },
   { id: 'ai', label: 'AI gợi ý' }
 ];
@@ -29,6 +31,7 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showLogin, setShowLogin] = useState(!token);
   const [statusMessage, setStatusMessage] = useState('');
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
 
   const [revenue, setRevenue] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -45,6 +48,28 @@ export default function App() {
   const [actualQty, setActualQty] = useState('');
   const [inventoryCategoryName, setInventoryCategoryName] = useState('');
   const [employees, setEmployees] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [shiftForm, setShiftForm] = useState({ name: '', start_time: '', end_time: '' });
+  const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [branchForm, setBranchForm] = useState({ id: '', name: '', address: '', latitude: '', longitude: '' });
+  const [employeeForm, setEmployeeForm] = useState({
+    id: '',
+    user_id: '',
+    username: '',
+    password: '',
+    full_name: '',
+    phone: '',
+    position: '',
+    branch_id: ''
+  });
+  const [roleSelections, setRoleSelections] = useState({});
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newPermission, setNewPermission] = useState({ code: '', description: '' });
+  const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [selectedPermissionId, setSelectedPermissionId] = useState('');
+  const [rolePermissions, setRolePermissions] = useState({});
   const [aiSuggest, setAiSuggest] = useState([]);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
@@ -62,6 +87,8 @@ export default function App() {
   const [branchPrice, setBranchPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
+  const [issueForm, setIssueForm] = useState({ ingredient_id: '', quantity: '', reason: '' });
+  const [adjustmentForm, setAdjustmentForm] = useState({ ingredient_id: '', quantity: '', reason: '' });
 
   const totalRevenueToday = useMemo(() => {
     if (!revenue.length) return 0;
@@ -81,6 +108,10 @@ export default function App() {
     setLoading(true);
     setStatusMessage('');
     try {
+      if (token === 'demo-token') {
+        setLoading(false);
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
       const params = new URLSearchParams();
       if (branchId) params.set('branch_id', branchId);
@@ -110,7 +141,9 @@ export default function App() {
 
       setInventoryAlerts([]);
     } catch (err) {
-      setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
+      if (token !== 'demo-token') {
+        setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
+      }
     } finally {
       setLoading(false);
     }
@@ -163,10 +196,379 @@ export default function App() {
     }
   };
 
+  const refreshEmployees = async () => {
+    if (!token) return;
+    try {
+      if (token === 'demo-token') {
+        setEmployees([]);
+        return;
+      }
+      const headers = { Authorization: `Bearer ${token}` };
+      const params = new URLSearchParams();
+      if (branchId) params.set('branch_id', branchId);
+      const url = params.toString() ? `${apiBase}/employees?${params.toString()}` : `${apiBase}/employees`;
+      const res = await fetch(url, { headers });
+      const data = res.ok ? await res.json() : [];
+      setEmployees(data);
+    } catch {
+      setEmployees([]);
+    }
+  };
+
+  const refreshShifts = async () => {
+    if (!token) return;
+    try {
+      if (token === 'demo-token') {
+        setShifts([
+          { id: 'demo-1', name: 'Ca sáng', start_time: '08:00', end_time: '12:00' },
+          { id: 'demo-2', name: 'Ca chiều', start_time: '13:00', end_time: '17:00' }
+        ]);
+        return;
+      }
+      const res = await fetch(`${apiBase}/shifts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setShifts(data);
+    } catch {
+      setShifts([]);
+    }
+  };
+
+  const refreshBranches = async () => {
+    if (!token) return;
+    try {
+      if (token === 'demo-token') {
+        setBranches([
+          { id: 'demo-branch-1', name: 'Chi nhánh A', address: 'Demo address', latitude: 10.776, longitude: 106.700 }
+        ]);
+        return;
+      }
+      const res = await fetch(`${apiBase}/branches`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setBranches(data);
+    } catch {
+      setBranches([]);
+    }
+  };
+
+  const fetchRoles = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBase}/rbac/roles`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setRoles(data);
+    } catch {
+      setRoles([]);
+    }
+  };
+
+  const fetchPermissions = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBase}/rbac/permissions`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setPermissions(data);
+    } catch {
+      setPermissions([]);
+    }
+  };
+
+  const resetEmployeeForm = () => {
+    setEmployeeForm({
+      id: '',
+      user_id: '',
+      username: '',
+      password: '',
+      full_name: '',
+      phone: '',
+      position: '',
+      branch_id: branchId || ''
+    });
+  };
+
+  const handleSaveEmployee = async () => {
+    if (!token) return;
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      };
+      if (employeeForm.id) {
+        const res = await fetch(`${apiBase}/employees/${employeeForm.id}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({
+            full_name: employeeForm.full_name || null,
+            phone: employeeForm.phone || null,
+            position: employeeForm.position || null,
+            branch_id: employeeForm.branch_id || null
+          })
+        });
+        if (!res.ok) throw new Error('update_failed');
+        setStatusMessage('Đã cập nhật nhân viên.');
+      } else {
+        if (!employeeForm.username || !employeeForm.password) {
+          setStatusMessage('Cần username và password để tạo nhân viên.');
+          return;
+        }
+        const res = await fetch(`${apiBase}/employees`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            username: employeeForm.username,
+            password: employeeForm.password,
+            full_name: employeeForm.full_name || null,
+            phone: employeeForm.phone || null,
+            position: employeeForm.position || null,
+            branch_id: employeeForm.branch_id || null
+          })
+        });
+        if (!res.ok) throw new Error('create_failed');
+        setStatusMessage('Đã tạo nhân viên.');
+      }
+      resetEmployeeForm();
+      refreshEmployees();
+    } catch {
+      setStatusMessage('Không thể lưu nhân viên.');
+    }
+  };
+
+  const handleEditEmployee = (emp) => {
+    setEmployeeForm({
+      id: emp.id || '',
+      user_id: emp.user_id || '',
+      username: emp.username || '',
+      password: '',
+      full_name: emp.full_name || '',
+      phone: emp.phone || '',
+      position: emp.position || '',
+      branch_id: emp.branch_id || ''
+    });
+  };
+
+  const handleDeleteEmployee = async (emp) => {
+    if (!token || !emp?.id) return;
+    if (!window.confirm(`Xóa nhân viên ${emp.full_name || emp.username || emp.id}?`)) return;
+    try {
+      const res = await fetch(`${apiBase}/employees/${emp.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('delete_failed');
+      setStatusMessage('Đã xóa nhân viên.');
+      refreshEmployees();
+    } catch {
+      setStatusMessage('Không thể xóa nhân viên.');
+    }
+  };
+
+  const handleToggleUserStatus = async (emp) => {
+    if (!token || !emp?.user_id) return;
+    try {
+      const res = await fetch(`${apiBase}/users/${emp.user_id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ is_active: !emp.is_active })
+      });
+      if (!res.ok) throw new Error('status_failed');
+      setStatusMessage('Đã cập nhật trạng thái tài khoản.');
+      refreshEmployees();
+    } catch {
+      setStatusMessage('Không thể cập nhật trạng thái.');
+    }
+  };
+
+  const handleAssignRole = async (emp) => {
+    if (!token || !emp?.user_id) return;
+    const roleId = roleSelections[emp.user_id];
+    if (!roleId) {
+      setStatusMessage('Chọn role trước khi gán.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/rbac/users/${emp.user_id}/roles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ role_id: roleId })
+      });
+      if (!res.ok) throw new Error('role_failed');
+      setStatusMessage('Đã gán vai trò.');
+    } catch {
+      setStatusMessage('Không thể gán vai trò.');
+    }
+  };
+
+  const handleCreateRole = async () => {
+    if (!newRoleName.trim()) {
+      setStatusMessage('Cần tên role.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/rbac/roles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newRoleName.trim() })
+      });
+      if (!res.ok) throw new Error('role_failed');
+      setNewRoleName('');
+      fetchRoles();
+      setStatusMessage('Đã tạo role.');
+    } catch {
+      setStatusMessage('Không thể tạo role.');
+    }
+  };
+
+  const handleCreatePermission = async () => {
+    if (!newPermission.code.trim()) {
+      setStatusMessage('Cần mã quyền.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/rbac/permissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          code: newPermission.code.trim(),
+          description: newPermission.description || null
+        })
+      });
+      if (!res.ok) throw new Error('perm_failed');
+      setNewPermission({ code: '', description: '' });
+      fetchPermissions();
+      setStatusMessage('Đã tạo quyền.');
+    } catch {
+      setStatusMessage('Không thể tạo quyền.');
+    }
+  };
+
+  const handleAssignPermissionToRole = async () => {
+    if (!selectedRoleId || !selectedPermissionId) {
+      setStatusMessage('Cần chọn role và permission.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/rbac/roles/${selectedRoleId}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ permission_id: selectedPermissionId })
+      });
+      if (!res.ok) throw new Error('assign_failed');
+      setStatusMessage('Đã gán quyền cho role.');
+      fetchRolePermissions(selectedRoleId);
+    } catch {
+      setStatusMessage('Không thể gán quyền.');
+    }
+  };
+
+  const handleCreateShift = async () => {
+    if (!shiftForm.name || !shiftForm.start_time || !shiftForm.end_time) {
+      setStatusMessage('Cần tên ca, giờ bắt đầu và giờ kết thúc.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/shifts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: shiftForm.name,
+          start_time: shiftForm.start_time,
+          end_time: shiftForm.end_time
+        })
+      });
+      if (!res.ok) throw new Error('shift_failed');
+      setShiftForm({ name: '', start_time: '', end_time: '' });
+      setStatusMessage('Đã tạo ca làm.');
+      refreshShifts();
+    } catch {
+      setStatusMessage('Không thể tạo ca làm.');
+    }
+  };
+
+  const handleEditBranch = (branch) => {
+    setBranchForm({
+      id: branch.id,
+      name: branch.name || '',
+      address: branch.address || '',
+      latitude: branch.latitude ?? '',
+      longitude: branch.longitude ?? ''
+    });
+  };
+
+  const handleUpdateBranchLocation = async () => {
+    if (!branchForm.id) {
+      setStatusMessage('Chọn chi nhánh để cập nhật.');
+      return;
+    }
+    if (branchForm.latitude === '' || branchForm.longitude === '') {
+      setStatusMessage('Cần tọa độ latitude và longitude.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/branches/${branchForm.id}/location`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          latitude: Number(branchForm.latitude),
+          longitude: Number(branchForm.longitude)
+        })
+      });
+      if (!res.ok) throw new Error('branch_update_failed');
+      setStatusMessage('Đã cập nhật tọa độ chi nhánh.');
+      refreshBranches();
+    } catch {
+      setStatusMessage('Không thể cập nhật tọa độ chi nhánh.');
+    }
+  };
+
+  const fetchRolePermissions = async (roleId) => {
+    if (!token || !roleId) return;
+    try {
+      const res = await fetch(`${apiBase}/rbac/roles/${roleId}/permissions`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setRolePermissions(prev => ({ ...prev, [roleId]: data }));
+    } catch {
+      setRolePermissions(prev => ({ ...prev, [roleId]: [] }));
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
     fetchData();
   }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (!token) setShowLogin(true);
+  }, [token]);
 
   useEffect(() => {
     if (activeNav !== 'menu') return;
@@ -179,6 +581,32 @@ export default function App() {
   }, [activeNav, apiBase, branchId, token]);
 
   useEffect(() => {
+    if (activeNav !== 'hr') return;
+    fetchRoles();
+    refreshEmployees();
+    refreshShifts();
+    if (!employeeForm.id && !employeeForm.branch_id) {
+      setEmployeeForm(prev => ({ ...prev, branch_id: branchId || '' }));
+    }
+  }, [activeNav, apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (activeNav !== 'rbac') return;
+    fetchRoles();
+    fetchPermissions();
+  }, [activeNav, apiBase, token]);
+
+  useEffect(() => {
+    if (activeNav !== 'branches') return;
+    refreshBranches();
+  }, [activeNav, apiBase, token]);
+
+  useEffect(() => {
+    if (!selectedRoleId) return;
+    fetchRolePermissions(selectedRoleId);
+  }, [selectedRoleId]);
+
+  useEffect(() => {
     if (!token) return undefined;
     const wsUrl = apiBase.replace('https', 'wss').replace('http', 'ws');
     const url = `${wsUrl}/ws?token=${encodeURIComponent(token)}${branchId ? `&branch_id=${encodeURIComponent(branchId)}` : ''}`;
@@ -189,6 +617,8 @@ export default function App() {
         if (msg.event) fetchData();
         if (msg.event?.startsWith('product.') || msg.event?.startsWith('product_category.')) fetchMenuData();
         if (msg.event?.startsWith('inventory.category.') || msg.event?.startsWith('inventory.stocktake.')) fetchInventoryMeta();
+        if (msg.event?.startsWith('employee.') || msg.event?.startsWith('user.status.')) refreshEmployees();
+        if (msg.event?.startsWith('branch.location.')) refreshBranches();
       } catch {
         // ignore
       }
@@ -198,6 +628,14 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
+    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
+      localStorage.setItem('token', 'demo-token');
+      localStorage.setItem('apiBase', apiBase);
+      setToken('demo-token');
+      setShowLogin(false);
+      setStatusMessage('Đang dùng tài khoản demo offline.');
+      return;
+    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -212,6 +650,35 @@ export default function App() {
       setShowLogin(false);
     } catch (err) {
       setStatusMessage('Đăng nhập thất bại. Kiểm tra tài khoản hoặc API Base.');
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordForm.old_password || !passwordForm.new_password) {
+      setStatusMessage('Cần mật khẩu cũ và mật khẩu mới.');
+      return;
+    }
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setStatusMessage('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/users/me/password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          old_password: passwordForm.old_password,
+          new_password: passwordForm.new_password
+        })
+      });
+      if (!res.ok) throw new Error('password_failed');
+      setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
+      setStatusMessage('Đã đổi mật khẩu.');
+    } catch (err) {
+      setStatusMessage('Không thể đổi mật khẩu.');
     }
   };
 
@@ -292,6 +759,80 @@ export default function App() {
       setStatusMessage('Nhập kho thành công.');
     } catch (err) {
       setStatusMessage('Không thể nhập kho.');
+    }
+  };
+
+  const handleCreateIssue = async () => {
+    if (!branchId) {
+      setStatusMessage('Cần chọn branch_id để xuất kho.');
+      return;
+    }
+    if (!issueForm.ingredient_id || issueForm.quantity === '') {
+      setStatusMessage('Cần ingredient_id và số lượng.');
+      return;
+    }
+    const qty = Number(issueForm.quantity || 0);
+    if (qty === 0) {
+      setStatusMessage('Số lượng phải khác 0.');
+      return;
+    }
+    try {
+      const payload = {
+        branch_id: branchId,
+        reason: issueForm.reason || null,
+        items: [{ ingredient_id: issueForm.ingredient_id, quantity: qty }]
+      };
+      const res = await fetch(`${apiBase}/inventory/issues`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('issue_failed');
+      setIssueForm({ ingredient_id: '', quantity: '', reason: '' });
+      setStatusMessage('Đã tạo phiếu xuất kho.');
+      fetchData();
+    } catch (err) {
+      setStatusMessage('Không thể tạo phiếu xuất kho.');
+    }
+  };
+
+  const handleCreateAdjustment = async () => {
+    if (!branchId) {
+      setStatusMessage('Cần chọn branch_id để điều chỉnh tồn.');
+      return;
+    }
+    if (!adjustmentForm.ingredient_id || adjustmentForm.quantity === '') {
+      setStatusMessage('Cần ingredient_id và số lượng.');
+      return;
+    }
+    const qty = Number(adjustmentForm.quantity || 0);
+    if (qty === 0) {
+      setStatusMessage('Số lượng phải khác 0.');
+      return;
+    }
+    try {
+      const payload = {
+        branch_id: branchId,
+        reason: adjustmentForm.reason || null,
+        items: [{ ingredient_id: adjustmentForm.ingredient_id, quantity: qty }]
+      };
+      const res = await fetch(`${apiBase}/inventory/adjustments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('adjust_failed');
+      setAdjustmentForm({ ingredient_id: '', quantity: '', reason: '' });
+      setStatusMessage('Đã tạo phiếu điều chỉnh.');
+      fetchData();
+    } catch (err) {
+      setStatusMessage('Không thể tạo phiếu điều chỉnh.');
     }
   };
 
@@ -593,69 +1134,71 @@ export default function App() {
 
   return (
     <div className="dashboard-root">
-      <aside className="sidebar">
-        <div className="brand">
-          <h2>AutoManager</h2>
-          <p>Web Dashboard</p>
-        </div>
-        <nav>
-          {navItems.map(item => (
-            <button
-              key={item.id}
-              className={activeNav === item.id ? 'active' : ''}
-              onClick={() => setActiveNav(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <div>
-            <span>Chi nhánh</span>
-            <strong>{branchId || 'Chưa chọn'}</strong>
-          </div>
-          <button className="btn ghost" onClick={() => setShowLogin(true)}>Cài đặt</button>
-        </div>
-      </aside>
+      {token ? (
+        <>
+          <aside className="sidebar">
+            <div className="brand">
+              <h2>AutoManager</h2>
+              <p>Web Dashboard</p>
+            </div>
+            <nav>
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  className={activeNav === item.id ? 'active' : ''}
+                  onClick={() => setActiveNav(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <div className="sidebar-footer">
+              <div>
+                <span>Chi nhánh</span>
+                <strong>{branchId || 'Chưa chọn'}</strong>
+              </div>
+              <button className="btn ghost" onClick={() => setShowLogin(true)}>Cài đặt</button>
+            </div>
+          </aside>
 
-      <main className="content">
-        <header className="topbar">
-          <div>
-            <h1>Xin chào 👋</h1>
-            <p>Theo dõi hiệu suất vận hành và bán hàng theo thời gian thực.</p>
-          </div>
-          <div className="top-actions">
-            <input placeholder="Tìm báo cáo, đơn hàng..." />
-            <button className="btn primary" onClick={() => setShowLogin(true)}>
-              {token ? 'Cập nhật cấu hình' : 'Đăng nhập'}
-            </button>
-          </div>
-        </header>
+          <main className="content">
+            <header className="topbar">
+              <div>
+                <h1>Xin chào 👋</h1>
+                <p>Theo dõi hiệu suất vận hành và bán hàng theo thời gian thực.</p>
+              </div>
+              <div className="top-actions">
+                <input placeholder="Tìm báo cáo, đơn hàng..." />
+                <button className="btn primary" onClick={() => setShowLogin(true)}>
+                  {token ? 'Cập nhật cấu hình' : 'Đăng nhập'}
+                </button>
+              </div>
+            </header>
 
-        <section className="metrics">
-          <article>
-            <h3>Doanh thu hôm nay</h3>
-            <strong>{formatVnd(totalRevenueToday)}</strong>
-            <span>So với hôm qua</span>
-          </article>
-          <article>
-            <h3>Đơn hàng</h3>
-            <strong>{orderCount}</strong>
-            <span>Trong khoảng lọc</span>
-          </article>
-          <article>
-            <h3>Cảnh báo tồn kho</h3>
-            <strong>{inventoryAlerts.length}</strong>
-            <span>Nguyên liệu cần theo dõi</span>
-          </article>
-          <article>
-            <h3>Trạng thái hệ thống</h3>
-            <strong>{loading ? 'Đang đồng bộ' : token ? 'Đã kết nối' : 'Chưa đăng nhập'}</strong>
-            <span>{apiBase}</span>
-          </article>
-        </section>
+            <section className="metrics">
+              <article>
+                <h3>Doanh thu hôm nay</h3>
+                <strong>{formatVnd(totalRevenueToday)}</strong>
+                <span>So với hôm qua</span>
+              </article>
+              <article>
+                <h3>Đơn hàng</h3>
+                <strong>{orderCount}</strong>
+                <span>Trong khoảng lọc</span>
+              </article>
+              <article>
+                <h3>Cảnh báo tồn kho</h3>
+                <strong>{inventoryAlerts.length}</strong>
+                <span>Nguyên liệu cần theo dõi</span>
+              </article>
+              <article>
+                <h3>Trạng thái hệ thống</h3>
+                <strong>{loading ? 'Đang đồng bộ' : token ? 'Đã kết nối' : 'Chưa đăng nhập'}</strong>
+                <span>{apiBase}</span>
+              </article>
+            </section>
 
-        {activeNav === 'overview' && (
+            {activeNav === 'overview' && (
           <section className="grid">
             <div className="card">
               <div className="card-head">
@@ -1048,7 +1591,12 @@ export default function App() {
               <div className="form-grid">
                 <div className="form-row">
                   <label>Ingredient ID</label>
-                  <input value={inputForm.ingredient_id} onChange={(e) => setInputForm({ ...inputForm, ingredient_id: e.target.value })} />
+                  <select value={inputForm.ingredient_id} onChange={(e) => setInputForm({ ...inputForm, ingredient_id: e.target.value })}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-row">
                   <label>Số lượng</label>
@@ -1064,6 +1612,92 @@ export default function App() {
                 </div>
               </div>
               <button className="btn primary" onClick={handleCreateInput}>Tạo phiếu nhập</button>
+            </div>
+
+            <div className="card">
+              <h3>Xuất kho nguyên liệu</h3>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Ingredient ID</label>
+                  <select value={issueForm.ingredient_id} onChange={(e) => setIssueForm({ ...issueForm, ingredient_id: e.target.value })}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng</label>
+                  <input value={issueForm.quantity} onChange={(e) => setIssueForm({ ...issueForm, quantity: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input value={issueForm.reason} onChange={(e) => setIssueForm({ ...issueForm, reason: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleCreateIssue}>Tạo phiếu xuất</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Số lượng</span>
+                  <span>Ngày</span>
+                  <span></span>
+                </div>
+                {inventoryTx.filter(tx => tx.transaction_type === 'OUT').slice(0, 6).map(tx => (
+                  <div key={tx.id} className="table-row">
+                    <span>{tx.ingredient_id}</span>
+                    <span>{tx.quantity}</span>
+                    <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+                    <span></span>
+                  </div>
+                ))}
+                {inventoryTx.filter(tx => tx.transaction_type === 'OUT').length === 0 && (
+                  <div className="empty">Chưa có phiếu xuất kho.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Điều chỉnh tồn kho</h3>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Ingredient ID</label>
+                  <select value={adjustmentForm.ingredient_id} onChange={(e) => setAdjustmentForm({ ...adjustmentForm, ingredient_id: e.target.value })}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng (+/-)</label>
+                  <input value={adjustmentForm.quantity} onChange={(e) => setAdjustmentForm({ ...adjustmentForm, quantity: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input value={adjustmentForm.reason} onChange={(e) => setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleCreateAdjustment}>Tạo phiếu điều chỉnh</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Số lượng</span>
+                  <span>Ngày</span>
+                  <span></span>
+                </div>
+                {inventoryTx.filter(tx => tx.transaction_type === 'ADJUST').slice(0, 6).map(tx => (
+                  <div key={tx.id} className="table-row">
+                    <span>{tx.ingredient_id}</span>
+                    <span>{tx.quantity}</span>
+                    <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+                    <span></span>
+                  </div>
+                ))}
+                {inventoryTx.filter(tx => tx.transaction_type === 'ADJUST').length === 0 && (
+                  <div className="empty">Chưa có phiếu điều chỉnh.</div>
+                )}
+              </div>
             </div>
 
             <div className="card">
@@ -1106,29 +1740,334 @@ export default function App() {
         )}
 
         {activeNav === 'hr' && (
-          <section className="grid single">
+          <section className="grid">
             <div className="card">
               <div className="card-head">
-                <h3>Nhân sự</h3>
+                <h3>Ca làm</h3>
+                <span>{shifts.length} ca</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Tên ca</label>
+                  <input value={shiftForm.name} onChange={(e) => setShiftForm({ ...shiftForm, name: e.target.value })} placeholder="Ca sáng" />
+                </div>
+                <div className="form-row">
+                  <label>Giờ bắt đầu</label>
+                  <input value={shiftForm.start_time} onChange={(e) => setShiftForm({ ...shiftForm, start_time: e.target.value })} placeholder="08:00" />
+                </div>
+                <div className="form-row">
+                  <label>Giờ kết thúc</label>
+                  <input value={shiftForm.end_time} onChange={(e) => setShiftForm({ ...shiftForm, end_time: e.target.value })} placeholder="12:00" />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleCreateShift}>Tạo ca làm</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Tên ca</span>
+                  <span>Bắt đầu</span>
+                  <span>Kết thúc</span>
+                  <span></span>
+                </div>
+                {shifts.map(shift => (
+                  <div key={shift.id} className="table-row">
+                    <span>{shift.name}</span>
+                    <span>{shift.start_time}</span>
+                    <span>{shift.end_time}</span>
+                    <span></span>
+                  </div>
+                ))}
+                {shifts.length === 0 && <div className="empty">Chưa có ca làm.</div>}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <h3>{employeeForm.id ? 'Cập nhật nhân viên' : 'Thêm nhân viên'}</h3>
                 <span>{employees.length} nhân viên</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Họ tên</label>
+                  <input
+                    value={employeeForm.full_name}
+                    onChange={(e) => setEmployeeForm({ ...employeeForm, full_name: e.target.value })}
+                    placeholder="Nguyễn Văn A"
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Chức vụ</label>
+                  <input
+                    value={employeeForm.position}
+                    onChange={(e) => setEmployeeForm({ ...employeeForm, position: e.target.value })}
+                    placeholder="Thu ngân"
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Số điện thoại</label>
+                  <input
+                    value={employeeForm.phone}
+                    onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value })}
+                    placeholder="09xxxxxxxx"
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Chi nhánh (branch_id)</label>
+                  <input
+                    value={employeeForm.branch_id}
+                    onChange={(e) => setEmployeeForm({ ...employeeForm, branch_id: e.target.value })}
+                    placeholder={branchId || 'branch_id'}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Tài khoản</label>
+                  <input
+                    value={employeeForm.username}
+                    onChange={(e) => setEmployeeForm({ ...employeeForm, username: e.target.value })}
+                    placeholder="username"
+                    disabled={Boolean(employeeForm.id)}
+                  />
+                </div>
+                {!employeeForm.id && (
+                  <div className="form-row">
+                    <label>Mật khẩu</label>
+                    <input
+                      type="password"
+                      value={employeeForm.password}
+                      onChange={(e) => setEmployeeForm({ ...employeeForm, password: e.target.value })}
+                      placeholder="********"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="actions">
+                <button className="btn primary" onClick={handleSaveEmployee}>
+                  {employeeForm.id ? 'Cập nhật' : 'Tạo mới'}
+                </button>
+                <button className="btn ghost" onClick={resetEmployeeForm}>Huỷ</button>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Danh sách nhân viên</h3>
+                <button className="btn ghost" onClick={refreshEmployees}>Làm mới</button>
               </div>
               <div className="table">
                 <div className="table-row head">
                   <span>Họ tên</span>
+                  <span>Tài khoản</span>
                   <span>Chức vụ</span>
-                  <span>Số điện thoại</span>
+                  <span>SĐT</span>
                   <span>Chi nhánh</span>
+                  <span>Trạng thái</span>
+                  <span>Vai trò</span>
+                  <span>Hành động</span>
                 </div>
                 {employees.map(emp => (
                   <div key={emp.id} className="table-row">
                     <span>{emp.full_name || emp.username}</span>
+                    <span>{emp.username || emp.user_id}</span>
                     <span>{emp.position || '---'}</span>
                     <span>{emp.phone || '---'}</span>
                     <span>{emp.branch_id || '---'}</span>
+                    <span>{emp.is_active ? 'Đang hoạt động' : 'Đã khóa'}</span>
+                    <span>
+                      <div className="inline">
+                        <select
+                          value={roleSelections[emp.user_id] || ''}
+                          onChange={(e) => setRoleSelections(prev => ({ ...prev, [emp.user_id]: e.target.value }))}
+                        >
+                          <option value="">Chọn role</option>
+                          {roles.map(role => (
+                            <option key={role.id} value={role.id}>{role.name}</option>
+                          ))}
+                        </select>
+                        <button className="btn ghost" onClick={() => handleAssignRole(emp)}>Gán</button>
+                      </div>
+                    </span>
+                    <span>
+                      <div className="inline">
+                        <button className="btn ghost" onClick={() => handleEditEmployee(emp)}>Sửa</button>
+                        <button className="btn ghost" onClick={() => handleToggleUserStatus(emp)}>
+                          {emp.is_active ? 'Vô hiệu' : 'Kích hoạt'}
+                        </button>
+                        <button className="btn danger" onClick={() => handleDeleteEmployee(emp)}>Xóa</button>
+                      </div>
+                    </span>
                   </div>
                 ))}
                 {employees.length === 0 && <div className="empty">Chưa có dữ liệu nhân viên.</div>}
               </div>
+            </div>
+          </section>
+        )}
+
+        {activeNav === 'rbac' && (
+          <section className="grid">
+            <div className="card">
+              <div className="card-head">
+                <h3>Vai trò (Roles)</h3>
+                <span>{roles.length} role</span>
+              </div>
+              <div className="form-row">
+                <label>Tên role</label>
+                <input value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} placeholder="VD: Thu ngân" />
+              </div>
+              <button className="btn primary" onClick={handleCreateRole}>Tạo role</button>
+              <div className="list">
+                {roles.map(role => (
+                  <div key={role.id} className="list-item">
+                    <div>
+                      <h4>{role.name}</h4>
+                      <p>{role.id}</p>
+                    </div>
+                    <strong>Role</strong>
+                  </div>
+                ))}
+                {roles.length === 0 && <div className="empty">Chưa có role.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Quyền (Permissions)</h3>
+                <span>{permissions.length} quyền</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Mã quyền</label>
+                  <input value={newPermission.code} onChange={(e) => setNewPermission({ ...newPermission, code: e.target.value })} placeholder="VD: ORDERS_VIEW" />
+                </div>
+                <div className="form-row">
+                  <label>Mô tả</label>
+                  <input value={newPermission.description} onChange={(e) => setNewPermission({ ...newPermission, description: e.target.value })} placeholder="Mô tả ngắn" />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleCreatePermission}>Tạo quyền</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Mã</span>
+                  <span>Mô tả</span>
+                  <span></span>
+                </div>
+                {permissions.map(perm => (
+                  <div key={perm.id} className="table-row">
+                    <span>{perm.code}</span>
+                    <span>{perm.description || '---'}</span>
+                    <span></span>
+                  </div>
+                ))}
+                {permissions.length === 0 && <div className="empty">Chưa có quyền.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Gán quyền cho role</h3>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Role</label>
+                  <select value={selectedRoleId} onChange={(e) => setSelectedRoleId(e.target.value)}>
+                    <option value="">Chọn role</option>
+                    {roles.map(role => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Permission</label>
+                  <select value={selectedPermissionId} onChange={(e) => setSelectedPermissionId(e.target.value)}>
+                    <option value="">Chọn quyền</option>
+                    {permissions.map(perm => (
+                      <option key={perm.id} value={perm.id}>{perm.code}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleAssignPermissionToRole}>Gán quyền</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Quyền đã gán</span>
+                  <span>Mô tả</span>
+                  <span></span>
+                </div>
+                {(rolePermissions[selectedRoleId] || []).map(perm => (
+                  <div key={perm.id} className="table-row">
+                    <span>{perm.code}</span>
+                    <span>{perm.description || '---'}</span>
+                    <span></span>
+                  </div>
+                ))}
+                {selectedRoleId && (rolePermissions[selectedRoleId] || []).length === 0 && (
+                  <div className="empty">Role chưa có quyền.</div>
+                )}
+                {!selectedRoleId && <div className="empty">Chọn role để xem quyền.</div>}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeNav === 'branches' && (
+          <section className="grid">
+            <div className="card">
+              <div className="card-head">
+                <h3>Danh sách chi nhánh</h3>
+                <button className="btn ghost" onClick={refreshBranches}>Làm mới</button>
+              </div>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Tên</span>
+                  <span>Địa chỉ</span>
+                  <span>Lat</span>
+                  <span>Lng</span>
+                  <span></span>
+                </div>
+                {branches.map(branch => (
+                  <div key={branch.id} className="table-row">
+                    <span>{branch.name}</span>
+                    <span>{branch.address || '---'}</span>
+                    <span>{branch.latitude ?? '---'}</span>
+                    <span>{branch.longitude ?? '---'}</span>
+                    <span>
+                      <button className="btn ghost" onClick={() => handleEditBranch(branch)}>Sửa</button>
+                    </span>
+                  </div>
+                ))}
+                {branches.length === 0 && <div className="empty">Chưa có chi nhánh.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Cập nhật tọa độ chi nhánh</h3>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Chi nhánh</label>
+                  <select
+                    value={branchForm.id}
+                    onChange={(e) => {
+                      const selected = branches.find(b => b.id === e.target.value);
+                      if (selected) handleEditBranch(selected);
+                      else setBranchForm({ id: '', name: '', address: '', latitude: '', longitude: '' });
+                    }}
+                  >
+                    <option value="">Chọn chi nhánh</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Latitude</label>
+                  <input value={branchForm.latitude} onChange={(e) => setBranchForm({ ...branchForm, latitude: e.target.value })} placeholder="10.123456" />
+                </div>
+                <div className="form-row">
+                  <label>Longitude</label>
+                  <input value={branchForm.longitude} onChange={(e) => setBranchForm({ ...branchForm, longitude: e.target.value })} placeholder="106.123456" />
+                </div>
+              </div>
+              <button className="btn primary" onClick={handleUpdateBranchLocation}>Lưu tọa độ</button>
             </div>
           </section>
         )}
@@ -1194,15 +2133,27 @@ export default function App() {
           </section>
         )}
 
-        {statusMessage && <div className="status">{statusMessage}</div>}
-      </main>
+            {statusMessage && <div className="status">{statusMessage}</div>}
+          </main>
+        </>
+      ) : (
+        <main className="content">
+          <section className="grid single">
+            <div className="card">
+              <h3>Vui lòng đăng nhập</h3>
+              <p>Bạn cần đăng nhập để truy cập nội dung hệ thống.</p>
+              <button className="btn primary" onClick={() => setShowLogin(true)}>Đăng nhập</button>
+            </div>
+          </section>
+        </main>
+      )}
 
       {showLogin && (
         <section className="modal">
           <div className="modal-card">
             <header>
               <h2>Cài đặt & Đăng nhập</h2>
-              <button onClick={() => setShowLogin(false)}>×</button>
+              {token && <button onClick={() => setShowLogin(false)}>×</button>}
             </header>
             <div className="modal-body">
               <div className="form-grid">
@@ -1222,10 +2173,34 @@ export default function App() {
                   <label>Mật khẩu</label>
                   <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
                 </div>
+                <div className="form-row">
+                  <small className="hint">Demo offline: admin / admin123</small>
+                </div>
+                {token && (
+                  <>
+                    <div className="form-row">
+                      <label>Mật khẩu cũ</label>
+                      <input type="password" value={passwordForm.old_password} onChange={(e) => setPasswordForm({ ...passwordForm, old_password: e.target.value })} />
+                    </div>
+                    <div className="form-row">
+                      <label>Mật khẩu mới</label>
+                      <input type="password" value={passwordForm.new_password} onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })} />
+                    </div>
+                    <div className="form-row">
+                      <label>Xác nhận mật khẩu mới</label>
+                      <input type="password" value={passwordForm.confirm_password} onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })} />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <footer>
-              <button className="btn ghost" onClick={() => { localStorage.removeItem('token'); setToken(''); }}>Đăng xuất</button>
+              {token && (
+                <button className="btn ghost" onClick={() => { localStorage.removeItem('token'); setToken(''); }}>Đăng xuất</button>
+              )}
+              {token && (
+                <button className="btn ghost" onClick={handleChangePassword}>Đổi mật khẩu</button>
+              )}
               <button className="btn primary" onClick={handleLogin}>Đăng nhập</button>
             </footer>
           </div>

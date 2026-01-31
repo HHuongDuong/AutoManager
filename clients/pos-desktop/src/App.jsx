@@ -22,6 +22,8 @@ export default function App() {
   const [categoryId, setCategoryId] = useState(localStorage.getItem('categoryId') || '');
   const [ingredients, setIngredients] = useState([]);
   const [inventoryInputs, setInventoryInputs] = useState([]);
+  const [tables, setTables] = useState([]);
+  const [selectedTableId, setSelectedTableId] = useState('');
   const [openOrders, setOpenOrders] = useState([]);
   const [currentOrderId, setCurrentOrderId] = useState('');
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -41,6 +43,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('');
   const [showLogin, setShowLogin] = useState(!token);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
     const onOffline = () => setIsOnline(false);
@@ -218,6 +221,22 @@ export default function App() {
     }
   };
 
+  const refreshTables = async () => {
+    if (!token || !branchId) return;
+    try {
+      const params = new URLSearchParams();
+      params.set('branch_id', branchId);
+      const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setTables(data || []);
+    } catch (err) {
+      setTables([]);
+    }
+  };
+
   useEffect(() => {
     if (!token) return;
     fetch(`${apiBase}/me`, { headers: { Authorization: `Bearer ${token}` } })
@@ -225,6 +244,10 @@ export default function App() {
       .then(data => setUser(data))
       .catch(() => setUser(null));
   }, [apiBase, token]);
+
+  useEffect(() => {
+    if (!token) setShowLogin(true);
+  }, [token]);
 
   useEffect(() => {
     refreshProducts();
@@ -237,6 +260,14 @@ export default function App() {
   useEffect(() => {
     refreshCategories();
   }, [apiBase, token]);
+
+  useEffect(() => {
+    refreshTables();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    if (orderType !== 'DINE_IN') setSelectedTableId('');
+  }, [orderType]);
 
   useEffect(() => {
     if (!token || !branchId) return;
@@ -348,6 +379,7 @@ export default function App() {
         }
         if (msg.event?.startsWith('order.') || msg.event?.startsWith('table.')) {
           fetchOpenOrders();
+          if (msg.event?.startsWith('table.')) refreshTables();
           setStatusMessage(`Realtime: ${msg.event}`);
         }
       } catch {
@@ -440,10 +472,19 @@ export default function App() {
     setCashReceived(0);
     setStatusMessage('');
     setCurrentOrderId('');
+    setSelectedTableId('');
   };
 
   const handleLogin = async () => {
     setStatusMessage('');
+    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
+      localStorage.setItem('token', 'demo-token');
+      localStorage.setItem('apiBase', apiBase);
+      setToken('demo-token');
+      setShowLogin(false);
+      setStatusMessage('Đang dùng tài khoản demo offline.');
+      return;
+    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -461,8 +502,41 @@ export default function App() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!passwordForm.old_password || !passwordForm.new_password) {
+      setStatusMessage('Cần mật khẩu cũ và mật khẩu mới.');
+      return;
+    }
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setStatusMessage('Xác nhận mật khẩu mới không khớp.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/users/me/password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          old_password: passwordForm.old_password,
+          new_password: passwordForm.new_password
+        })
+      });
+      if (!res.ok) throw new Error('password_failed');
+      setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
+      setStatusMessage('Đã đổi mật khẩu.');
+    } catch (err) {
+      setStatusMessage('Không thể đổi mật khẩu.');
+    }
+  };
+
   const handleCreateOrder = async () => {
     if (cart.length === 0) return;
+    if (orderType === 'DINE_IN' && !selectedTableId) {
+      setStatusMessage('Cần chọn bàn cho đơn tại chỗ.');
+      return;
+    }
     if (currentOrderId) {
       try {
         setStatusMessage('Đang thanh toán...');
@@ -498,6 +572,7 @@ export default function App() {
     const payload = {
       branch_id: branchId,
       order_type: orderType,
+      table_id: orderType === 'DINE_IN' ? selectedTableId : null,
       items: cart.map(item => ({
         product_id: item.product_id || (item.id.startsWith('p-') ? null : item.id),
         name: item.name,
@@ -680,84 +755,102 @@ export default function App() {
 
   return (
     <div className="pos-root">
-      <header className="topbar">
-        <div className="brand">
-          <span className="badge">AutoManager</span>
-          <div>
-            <h1>POS Desktop</h1>
-            <p>Giao diện thu ngân cho cửa hàng</p>
-          </div>
-        </div>
-        <div className="top-actions">
-          <div className="meta">
-            <span>Chi nhánh</span>
-            <strong>{branchId || 'Chưa chọn'}</strong>
-          </div>
-          <div className="meta">
-            <span>Nhân viên</span>
-            <strong>{user?.employee?.full_name || user?.user_id || '---'}</strong>
-          </div>
-          <button className="btn ghost" onClick={() => setShowLogin(true)}>Cài đặt</button>
-        </div>
-      </header>
-
-      <main className="layout">
-        <section className="menu-panel">
-          <div className="search-row">
-            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">Tất cả nhóm</option>
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm món, SKU..."
-            />
-            <button className="btn ghost" onClick={() => setSearch('')}>Xoá</button>
-          </div>
-          <div className="menu-grid">
-            {loadingProducts && <div className="card">Đang tải món...</div>}
-            {!loadingProducts && products.length === 0 && (
-              <div className="card">Không có dữ liệu món.</div>
-            )}
-            {products.map(product => (
-              <button key={product.id || product.name} className="menu-item" onClick={() => addToCart(product)}>
-                <div>
-                  <h3>{product.name}</h3>
-                  <p>{product.sku || '---'}</p>
-                </div>
-                <strong>{formatVnd(product.price)}</strong>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <aside className="cart-panel">
-          <div className="cart-header">
-            <h2>Hoá đơn</h2>
-            <button className="btn ghost" onClick={clearOrder}>Tạo mới</button>
-          </div>
-          {currentOrderId && <div className="status">Đang chỉnh phiếu: {currentOrderId}</div>}
-          <div className="cart-list">
-            {cart.length === 0 && <div className="empty">Chưa có món nào.</div>}
-            {cart.map(item => (
-              <div key={item.id} className="cart-item">
-                <div>
-                  <h4>{item.name}</h4>
-                  <span>{formatVnd(item.price)}</span>
-                </div>
-                <div className="qty">
-                  <button onClick={() => updateQty(item.id, -1)}>-</button>
-                  <span>{item.quantity}</span>
-                  <button onClick={() => updateQty(item.id, 1)}>+</button>
-                </div>
-                <strong>{formatVnd(item.price * item.quantity)}</strong>
-                <button className="icon" onClick={() => removeItem(item.id)}>×</button>
+      {token ? (
+        <>
+          <header className="topbar">
+            <div className="brand">
+              <span className="badge">AutoManager</span>
+              <div>
+                <h1>POS Desktop</h1>
+                <p>Giao diện thu ngân cho cửa hàng</p>
               </div>
-            ))}
-          </div>
+            </div>
+            <div className="top-actions">
+              <div className="meta">
+                <span>Chi nhánh</span>
+                <strong>{branchId || 'Chưa chọn'}</strong>
+              </div>
+              <div className="meta">
+                <span>Nhân viên</span>
+                <strong>{user?.employee?.full_name || user?.user_id || '---'}</strong>
+              </div>
+              <button className="btn ghost" onClick={() => setShowLogin(true)}>Cài đặt</button>
+            </div>
+          </header>
+
+          <main className="layout">
+            <section className="menu-panel">
+              <div className="search-row">
+                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                  <option value="">Tất cả nhóm</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Tìm món, SKU..."
+                />
+                <button className="btn ghost" onClick={() => setSearch('')}>Xoá</button>
+              </div>
+              <div className="menu-grid">
+                {loadingProducts && <div className="card">Đang tải món...</div>}
+                {!loadingProducts && products.length === 0 && (
+                  <div className="card">Không có dữ liệu món.</div>
+                )}
+                {products.map(product => (
+                  <button key={product.id || product.name} className="menu-item" onClick={() => addToCart(product)}>
+                    <div>
+                      <h3>{product.name}</h3>
+                      <p>{product.sku || '---'}</p>
+                    </div>
+                    <strong>{formatVnd(product.price)}</strong>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <aside className="cart-panel">
+              <div className="cart-header">
+                <h2>Hoá đơn</h2>
+                <button className="btn ghost" onClick={clearOrder}>Tạo mới</button>
+              </div>
+              {orderType === 'DINE_IN' && (
+                <div className="form-row">
+                  <label>Chọn bàn</label>
+                  <select
+                    value={selectedTableId}
+                    onChange={(e) => setSelectedTableId(e.target.value)}
+                  >
+                    <option value="">-- Chọn bàn --</option>
+                    {tables.filter(table => table.status === 'AVAILABLE').map(table => (
+                      <option key={table.id} value={table.id}>
+                        {table.name} ({table.status})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {currentOrderId && <div className="status">Đang chỉnh phiếu: {currentOrderId}</div>}
+              <div className="cart-list">
+                {cart.length === 0 && <div className="empty">Chưa có món nào.</div>}
+                {cart.map(item => (
+                  <div key={item.id} className="cart-item">
+                    <div>
+                      <h4>{item.name}</h4>
+                      <span>{formatVnd(item.price)}</span>
+                    </div>
+                    <div className="qty">
+                      <button onClick={() => updateQty(item.id, -1)}>-</button>
+                      <span>{item.quantity}</span>
+                      <button onClick={() => updateQty(item.id, 1)}>+</button>
+                    </div>
+                    <strong>{formatVnd(item.price * item.quantity)}</strong>
+                    <button className="icon" onClick={() => removeItem(item.id)}>×</button>
+                  </div>
+                ))}
+              </div>
           <div className="cart-summary">
             <div>
               <span>Tạm tính</span>
@@ -917,12 +1010,25 @@ export default function App() {
         </section>
       )}
 
+        </>
+      ) : (
+        <main className="layout">
+          <section className="summary">
+            <div className="card">
+              <h3>Vui lòng đăng nhập</h3>
+              <p>Bạn cần đăng nhập để thao tác bán hàng.</p>
+              <button className="btn primary" onClick={() => setShowLogin(true)}>Đăng nhập</button>
+            </div>
+          </section>
+        </main>
+      )}
+
       {showLogin && (
         <section className="modal">
           <div className="modal-card">
             <header>
               <h2>Cài đặt & Đăng nhập</h2>
-              <button onClick={() => setShowLogin(false)}>×</button>
+              {token && <button onClick={() => setShowLogin(false)}>×</button>}
             </header>
             <div className="modal-body">
               <div className="form-grid">
@@ -967,10 +1073,34 @@ export default function App() {
                   <label>Mật khẩu</label>
                   <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
                 </div>
+                <div className="form-row">
+                  <small className="hint">Demo offline: admin / admin123</small>
+                </div>
+                {token && (
+                  <>
+                    <div className="form-row">
+                      <label>Mật khẩu cũ</label>
+                      <input type="password" value={passwordForm.old_password} onChange={(e) => setPasswordForm({ ...passwordForm, old_password: e.target.value })} />
+                    </div>
+                    <div className="form-row">
+                      <label>Mật khẩu mới</label>
+                      <input type="password" value={passwordForm.new_password} onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })} />
+                    </div>
+                    <div className="form-row">
+                      <label>Xác nhận mật khẩu mới</label>
+                      <input type="password" value={passwordForm.confirm_password} onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })} />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             <footer>
-              <button className="btn ghost" onClick={() => { localStorage.removeItem('token'); setToken(''); }}>Đăng xuất</button>
+              {token && (
+                <button className="btn ghost" onClick={() => { localStorage.removeItem('token'); setToken(''); }}>Đăng xuất</button>
+              )}
+              {token && (
+                <button className="btn ghost" onClick={handleChangePassword}>Đổi mật khẩu</button>
+              )}
               <button className="btn primary" onClick={handleLogin}>Đăng nhập</button>
             </footer>
           </div>

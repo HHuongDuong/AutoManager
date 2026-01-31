@@ -161,6 +161,34 @@ async function getEmployeeBranchId(employeeId) {
   return result.rows[0]?.branch_id || null;
 }
 
+async function getBranchLocation(branchId) {
+  if (!branchId) return null;
+  const result = await db.query('SELECT id, name, latitude, longitude FROM branches WHERE id = $1', [branchId]);
+  return result.rows[0] || null;
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function getShiftCheckStatus(shiftTime, checkTime) {
+  const diffMs = checkTime.getTime() - shiftTime.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  return {
+    status: diffMinutes <= 0 ? 'EARLY' : 'LATE',
+    diff_minutes: diffMinutes
+  };
+}
+
 app.post('/auth/register', async (req, res) => {
   try {
     const { username, password, role_ids = [] } = req.body || {};
@@ -205,6 +233,25 @@ app.get('/me', authenticate, async (req, res) => {
   const employee = empRes.rows[0] || null;
   const branches = await getAllowedBranchIds(req.user.sub);
   return res.json({ user_id: req.user.sub, employee, branches, roles: req.user.roles, permissions: req.user.permissions });
+});
+
+app.post('/users/me/password', authenticate, async (req, res) => {
+  try {
+    const { old_password, new_password } = req.body || {};
+    if (!old_password || !new_password) return res.status(400).json({ error: 'old_new_password_required' });
+    if (String(new_password).length < 6) return res.status(400).json({ error: 'password_too_short' });
+    const userRes = await db.query('SELECT id, username, password_hash FROM users WHERE id = $1', [req.user.sub]);
+    const user = userRes.rows[0];
+    if (!user) return res.status(404).json({ error: 'not_found' });
+    const ok = await bcrypt.compare(old_password, user.password_hash || '');
+    if (!ok) return res.status(400).json({ error: 'old_password_invalid' });
+    const password_hash = await bcrypt.hash(new_password, 10);
+    await db.query('UPDATE users SET password_hash = $2 WHERE id = $1', [req.user.sub, password_hash]);
+    await writeAuditLog(req, 'USER_PASSWORD_CHANGE', 'user', req.user.sub, {});
+    return res.json({ changed: true, user_id: req.user.sub, username: user.username });
+  } catch (err) {
+    return res.status(500).json({ error: 'password_change_failed', detail: err.message });
+  }
 });
 
 async function writeAuditLog(userOrReq, action, objectType, objectId, payload) {
@@ -277,6 +324,19 @@ app.post('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBA
   return res.status(201).json({ role_id: roleId, permission_id });
 });
 
+app.get('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const { roleId } = req.params;
+  const result = await db.query(
+    `SELECT p.id, p.code, p.description
+     FROM permissions p
+     JOIN role_permissions rp ON rp.permission_id = p.id
+     WHERE rp.role_id = $1
+     ORDER BY p.code`,
+    [roleId]
+  );
+  return res.json(result.rows);
+});
+
 app.post('/rbac/users/:userId/roles', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const { userId } = req.params;
   const { role_id } = req.body || {};
@@ -293,6 +353,25 @@ app.post('/rbac/users/:userId/branches', authenticate, requirePermission('RBAC_M
   await db.query('INSERT INTO user_branch_access (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, branch_id]);
   publishRealtime('rbac.user.branch.added', { user_id: userId, branch_id }, branch_id);
   return res.status(201).json({ user_id: userId, branch_id });
+});
+
+app.get('/branches', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const result = await db.query('SELECT id, name, address, latitude, longitude FROM branches ORDER BY name');
+  return res.json(result.rows);
+});
+
+app.patch('/branches/:id/location', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const { id } = req.params;
+  const { latitude, longitude } = req.body || {};
+  if (latitude == null || longitude == null) return res.status(400).json({ error: 'lat_lng_required' });
+  const result = await db.query(
+    'UPDATE branches SET latitude = $2, longitude = $3 WHERE id = $1 RETURNING id, name, address, latitude, longitude',
+    [id, Number(latitude), Number(longitude)]
+  );
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req, 'BRANCH_LOCATION_UPDATE', 'branch', id, { latitude, longitude });
+  publishRealtime('branch.location.updated', result.rows[0], id);
+  return res.json(result.rows[0]);
 });
 
 app.get('/branches/:branchId/e-invoice', authenticate, requirePermission('EINVOICE_MANAGE'), async (req, res) => {
@@ -776,6 +855,35 @@ app.patch('/tables/:id/status', authenticate, requirePermission('TABLE_MANAGE'),
 });
 
 // Audit log viewer
+
+app.get('/employees', authenticate, requirePermission('EMPLOYEE_VIEW'), async (req, res) => {
+  const { branch_id } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`e.branch_id = $${params.length}`);
+  } else {
+    const allowed = req.user?.permissions?.includes('RBAC_MANAGE') ? [] : await getAllowedBranchIds(req.user.sub);
+    if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+      if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+      params.push(allowed);
+      filters.push(`e.branch_id = ANY($${params.length})`);
+    }
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT e.id, e.user_id, e.branch_id, e.full_name, e.phone, e.position,
+            u.username, u.is_active
+     FROM employees e
+     LEFT JOIN users u ON u.id = e.user_id
+     ${where}
+     ORDER BY COALESCE(e.full_name, u.username) ASC`,
+    params
+  );
+  return res.json(result.rows);
+});
 
 app.get('/employees/:id', authenticate, requirePermission('EMPLOYEE_VIEW'), async (req, res) => {
   const empBranch = await getEmployeeBranchId(req.params.id);
@@ -1615,11 +1723,30 @@ app.post('/shifts', authenticate, requirePermission('ATTENDANCE_MANAGE'), async 
 });
 
 app.post('/attendance/checkin', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
-  const { employee_id, shift_id } = req.body || {};
+  const { employee_id, shift_id, latitude, longitude } = req.body || {};
   if (!employee_id || !shift_id) return res.status(400).json({ error: 'employee_shift_required' });
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return res.status(400).json({ error: 'location_required' });
+  }
   const empBranch = await getEmployeeBranchId(employee_id);
   if (!empBranch) return res.status(404).json({ error: 'employee_not_found' });
   if (!(await ensureBranchAccess(req, empBranch))) return res.status(403).json({ error: 'branch_forbidden' });
+  const branch = await getBranchLocation(empBranch);
+  if (!branch || branch.latitude == null || branch.longitude == null) {
+    return res.status(400).json({ error: 'branch_location_missing' });
+  }
+  const distance = haversineMeters(latitude, longitude, Number(branch.latitude), Number(branch.longitude));
+  if (distance > 50) {
+    return res.status(400).json({ error: 'too_far', distance_m: Math.round(distance), max_distance_m: 50 });
+  }
+  const shiftRes = await db.query('SELECT id, name, start_time, end_time FROM shifts WHERE id = $1', [shift_id]);
+  const shift = shiftRes.rows[0];
+  if (!shift) return res.status(404).json({ error: 'shift_not_found' });
+  const now = new Date();
+  const [startHour, startMinute] = String(shift.start_time).split(':').map(Number);
+  const shiftStart = new Date(now);
+  shiftStart.setHours(startHour || 0, startMinute || 0, 0, 0);
+  const checkStatus = getShiftCheckStatus(shiftStart, now);
   const openRes = await db.query(
     'SELECT id FROM attendance WHERE employee_id = $1 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1',
     [employee_id]
@@ -1629,25 +1756,67 @@ app.post('/attendance/checkin', authenticate, requirePermission('ATTENDANCE_MANA
     'INSERT INTO attendance (id, employee_id, shift_id, check_in) VALUES ($1, $2, $3, now()) RETURNING id, employee_id, shift_id, check_in',
     [randomUUID(), employee_id, shift_id]
   );
-  await writeAuditLog(req, 'ATTENDANCE_CHECKIN', 'attendance', result.rows[0].id, { employee_id, shift_id });
+  await writeAuditLog(req, 'ATTENDANCE_CHECKIN', 'attendance', result.rows[0].id, {
+    employee_id,
+    shift_id,
+    distance_m: Math.round(distance),
+    check_in_status: checkStatus.status,
+    check_in_diff_minutes: checkStatus.diff_minutes
+  });
   publishRealtime('attendance.checkin', result.rows[0], empBranch);
-  return res.status(201).json(result.rows[0]);
+  return res.status(201).json({
+    ...result.rows[0],
+    distance_m: Math.round(distance),
+    check_in_status: checkStatus.status,
+    check_in_diff_minutes: checkStatus.diff_minutes
+  });
 });
 
 app.post('/attendance/checkout', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
-  const { employee_id } = req.body || {};
+  const { employee_id, latitude, longitude } = req.body || {};
   if (!employee_id) return res.status(400).json({ error: 'employee_required' });
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    return res.status(400).json({ error: 'location_required' });
+  }
   const empBranch = await getEmployeeBranchId(employee_id);
   if (!empBranch) return res.status(404).json({ error: 'employee_not_found' });
   if (!(await ensureBranchAccess(req, empBranch))) return res.status(403).json({ error: 'branch_forbidden' });
+  const branch = await getBranchLocation(empBranch);
+  if (!branch || branch.latitude == null || branch.longitude == null) {
+    return res.status(400).json({ error: 'branch_location_missing' });
+  }
+  const distance = haversineMeters(latitude, longitude, Number(branch.latitude), Number(branch.longitude));
+  if (distance > 50) {
+    return res.status(400).json({ error: 'too_far', distance_m: Math.round(distance), max_distance_m: 50 });
+  }
   const result = await db.query(
     'UPDATE attendance SET check_out = now() WHERE employee_id = $1 AND check_out IS NULL RETURNING id, employee_id, shift_id, check_in, check_out',
     [employee_id]
   );
   if (result.rows.length === 0) return res.status(409).json({ error: 'not_checked_in' });
-  await writeAuditLog(req, 'ATTENDANCE_CHECKOUT', 'attendance', result.rows[0].id, { employee_id });
+  const shiftRes = await db.query('SELECT id, name, start_time, end_time FROM shifts WHERE id = $1', [result.rows[0].shift_id]);
+  const shift = shiftRes.rows[0];
+  let checkOutStatus = null;
+  if (shift) {
+    const now = new Date();
+    const [endHour, endMinute] = String(shift.end_time).split(':').map(Number);
+    const shiftEnd = new Date(now);
+    shiftEnd.setHours(endHour || 0, endMinute || 0, 0, 0);
+    checkOutStatus = getShiftCheckStatus(shiftEnd, now);
+  }
+  await writeAuditLog(req, 'ATTENDANCE_CHECKOUT', 'attendance', result.rows[0].id, {
+    employee_id,
+    distance_m: Math.round(distance),
+    check_out_status: checkOutStatus?.status || null,
+    check_out_diff_minutes: checkOutStatus?.diff_minutes ?? null
+  });
   publishRealtime('attendance.checkout', result.rows[0], empBranch);
-  return res.json(result.rows[0]);
+  return res.json({
+    ...result.rows[0],
+    distance_m: Math.round(distance),
+    check_out_status: checkOutStatus?.status || null,
+    check_out_diff_minutes: checkOutStatus?.diff_minutes ?? null
+  });
 });
 
 // AI (optional) - simple demand forecast
