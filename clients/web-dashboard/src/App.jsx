@@ -23,6 +23,7 @@ const navItems = [
   { id: 'ai', label: 'AI gợi ý' }
 ];
 
+
 export default function App() {
   const [activeNav, setActiveNav] = useState('overview');
   const [apiBase, setApiBase] = useState(localStorage.getItem('apiBase') || 'http://localhost:3000');
@@ -54,6 +55,11 @@ export default function App() {
   const [permissions, setPermissions] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branchForm, setBranchForm] = useState({ id: '', name: '', address: '', latitude: '', longitude: '' });
+  const [tables, setTables] = useState([]);
+  const [tableForm, setTableForm] = useState({ id: '', name: '', status: 'AVAILABLE' });
+  const [tableBranchId, setTableBranchId] = useState('');
+  const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [attendanceFilters, setAttendanceFilters] = useState({ employee_id: '', from: '', to: '' });
   const [employeeForm, setEmployeeForm] = useState({
     id: '',
     user_id: '',
@@ -66,9 +72,7 @@ export default function App() {
   });
   const [roleSelections, setRoleSelections] = useState({});
   const [newRoleName, setNewRoleName] = useState('');
-  const [newPermission, setNewPermission] = useState({ code: '', description: '' });
   const [selectedRoleId, setSelectedRoleId] = useState('');
-  const [selectedPermissionId, setSelectedPermissionId] = useState('');
   const [rolePermissions, setRolePermissions] = useState({});
   const [aiSuggest, setAiSuggest] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -98,6 +102,10 @@ export default function App() {
 
   const orderCount = useMemo(() => orders.length, [orders]);
   const categoryMap = useMemo(() => new Map(categories.map(cat => [cat.id, cat.name])), [categories]);
+  const assignedPermissionIds = useMemo(
+    () => new Set((rolePermissions[selectedRoleId] || []).map(perm => perm.id)),
+    [rolePermissions, selectedRoleId]
+  );
 
   const persistSettings = () => {
     localStorage.setItem('apiBase', apiBase);
@@ -251,6 +259,70 @@ export default function App() {
       setBranches(data);
     } catch {
       setBranches([]);
+    }
+  };
+
+  const refreshTables = async (branchIdValue) => {
+    if (!token || !branchIdValue) {
+      setTables([]);
+      return;
+    }
+    try {
+      if (token === 'demo-token') {
+        setTables([
+          { id: 'demo-table-1', branch_id: branchIdValue, name: 'Bàn 1', status: 'AVAILABLE' },
+          { id: 'demo-table-2', branch_id: branchIdValue, name: 'Bàn 2', status: 'OCCUPIED' }
+        ]);
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set('branch_id', branchIdValue);
+      const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setTables(data);
+    } catch {
+      setTables([]);
+    }
+  };
+
+  const fetchAttendanceLogs = async () => {
+    if (!token) return;
+    try {
+      if (token === 'demo-token') {
+        setAttendanceLogs([
+          {
+            id: 'demo-att-1',
+            employee_id: 'demo-emp',
+            full_name: 'Nhân viên Demo',
+            branch_id: branchId || 'demo-branch-1',
+            shift_id: 'demo-1',
+            shift_name: 'Ca sáng',
+            start_time: '08:00',
+            end_time: '12:00',
+            check_in: new Date().toISOString(),
+            check_out: null,
+            check_in_status: 'EARLY',
+            check_in_diff_minutes: -5,
+            check_out_status: null,
+            check_out_diff_minutes: null
+          }
+        ]);
+        return;
+      }
+      const params = new URLSearchParams();
+      if (branchId) params.set('branch_id', branchId);
+      if (attendanceFilters.employee_id) params.set('employee_id', attendanceFilters.employee_id);
+      if (attendanceFilters.from) params.set('from', attendanceFilters.from);
+      if (attendanceFilters.to) params.set('to', attendanceFilters.to);
+      const res = await fetch(`${apiBase}/attendance/logs?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res.ok ? await res.json() : [];
+      setAttendanceLogs(data);
+    } catch {
+      setAttendanceLogs([]);
     }
   };
 
@@ -434,51 +506,44 @@ export default function App() {
     }
   };
 
-  const handleCreatePermission = async () => {
-    if (!newPermission.code.trim()) {
-      setStatusMessage('Cần mã quyền.');
+  const handleToggleRolePermission = async (permissionId, isChecked) => {
+    if (!selectedRoleId) {
+      setStatusMessage('Chọn role trước khi gán quyền.');
+      return;
+    }
+    if (token === 'demo-token') {
+      const perm = permissions.find(p => p.id === permissionId);
+      setRolePermissions(prev => {
+        const current = prev[selectedRoleId] || [];
+        if (isChecked) {
+          if (!perm) return prev;
+          return { ...prev, [selectedRoleId]: [...current, perm] };
+        }
+        return { ...prev, [selectedRoleId]: current.filter(p => p.id !== permissionId) };
+      });
+      setStatusMessage(isChecked ? 'Đã gán quyền (demo).' : 'Đã bỏ gán quyền (demo).');
       return;
     }
     try {
-      const res = await fetch(`${apiBase}/rbac/permissions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          code: newPermission.code.trim(),
-          description: newPermission.description || null
-        })
-      });
-      if (!res.ok) throw new Error('perm_failed');
-      setNewPermission({ code: '', description: '' });
-      fetchPermissions();
-      setStatusMessage('Đã tạo quyền.');
-    } catch {
-      setStatusMessage('Không thể tạo quyền.');
-    }
-  };
-
-  const handleAssignPermissionToRole = async () => {
-    if (!selectedRoleId || !selectedPermissionId) {
-      setStatusMessage('Cần chọn role và permission.');
-      return;
-    }
-    try {
-      const res = await fetch(`${apiBase}/rbac/roles/${selectedRoleId}/permissions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ permission_id: selectedPermissionId })
-      });
-      if (!res.ok) throw new Error('assign_failed');
-      setStatusMessage('Đã gán quyền cho role.');
+      const headers = { Authorization: `Bearer ${token}` };
+      if (isChecked) {
+        const res = await fetch(`${apiBase}/rbac/roles/${selectedRoleId}/permissions`, {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permission_id: permissionId })
+        });
+        if (!res.ok) throw new Error('assign_failed');
+      } else {
+        const res = await fetch(`${apiBase}/rbac/roles/${selectedRoleId}/permissions/${permissionId}`, {
+          method: 'DELETE',
+          headers
+        });
+        if (!res.ok) throw new Error('remove_failed');
+      }
       fetchRolePermissions(selectedRoleId);
+      setStatusMessage(isChecked ? 'Đã gán quyền cho role.' : 'Đã bỏ gán quyền.');
     } catch {
-      setStatusMessage('Không thể gán quyền.');
+      setStatusMessage('Không thể cập nhật quyền cho role.');
     }
   };
 
@@ -548,6 +613,134 @@ export default function App() {
     }
   };
 
+  const handleCreateBranch = async () => {
+    if (!branchForm.name.trim()) {
+      setStatusMessage('Cần tên chi nhánh.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/branches`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: branchForm.name.trim(), address: branchForm.address || null })
+      });
+      if (!res.ok) throw new Error('branch_create_failed');
+      setBranchForm({ id: '', name: '', address: '', latitude: '', longitude: '' });
+      setStatusMessage('Đã tạo chi nhánh.');
+      refreshBranches();
+    } catch {
+      setStatusMessage('Không thể tạo chi nhánh.');
+    }
+  };
+
+  const handleUpdateBranchInfo = async () => {
+    if (!branchForm.id) {
+      setStatusMessage('Chọn chi nhánh để cập nhật.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/branches/${branchForm.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: branchForm.name || null, address: branchForm.address || null })
+      });
+      if (!res.ok) throw new Error('branch_update_failed');
+      setStatusMessage('Đã cập nhật thông tin chi nhánh.');
+      refreshBranches();
+    } catch {
+      setStatusMessage('Không thể cập nhật chi nhánh.');
+    }
+  };
+
+  const handleDeleteBranch = async (branch) => {
+    if (!branch?.id) return;
+    if (!window.confirm(`Xóa chi nhánh ${branch.name}?`)) return;
+    try {
+      const res = await fetch(`${apiBase}/branches/${branch.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('branch_delete_failed');
+      setStatusMessage('Đã xóa chi nhánh.');
+      refreshBranches();
+    } catch {
+      setStatusMessage('Không thể xóa chi nhánh.');
+    }
+  };
+
+  const handleCreateTable = async () => {
+    if (!tableBranchId) {
+      setStatusMessage('Chọn chi nhánh để tạo bàn.');
+      return;
+    }
+    if (!tableForm.name.trim()) {
+      setStatusMessage('Cần tên bàn.');
+      return;
+    }
+    try {
+      const res = await fetch(`${apiBase}/tables`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ branch_id: tableBranchId, name: tableForm.name.trim(), status: tableForm.status })
+      });
+      if (!res.ok) throw new Error('table_create_failed');
+      setTableForm({ id: '', name: '', status: 'AVAILABLE' });
+      setStatusMessage('Đã tạo bàn.');
+      refreshTables(tableBranchId);
+    } catch {
+      setStatusMessage('Không thể tạo bàn.');
+    }
+  };
+
+  const handleEditTable = (table) => {
+    setTableForm({ id: table.id, name: table.name || '', status: table.status || 'AVAILABLE' });
+  };
+
+  const handleUpdateTable = async () => {
+    if (!tableForm.id) return;
+    try {
+      const res = await fetch(`${apiBase}/tables/${tableForm.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: tableForm.name || null, status: tableForm.status || null })
+      });
+      if (!res.ok) throw new Error('table_update_failed');
+      setTableForm({ id: '', name: '', status: 'AVAILABLE' });
+      setStatusMessage('Đã cập nhật bàn.');
+      refreshTables(tableBranchId);
+    } catch {
+      setStatusMessage('Không thể cập nhật bàn.');
+    }
+  };
+
+  const handleDeleteTable = async (table) => {
+    if (!table?.id) return;
+    if (!window.confirm(`Xóa ${table.name}?`)) return;
+    try {
+      const res = await fetch(`${apiBase}/tables/${table.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('table_delete_failed');
+      setStatusMessage('Đã xóa bàn.');
+      refreshTables(tableBranchId);
+    } catch {
+      setStatusMessage('Không thể xóa bàn.');
+    }
+  };
+
   const fetchRolePermissions = async (roleId) => {
     if (!token || !roleId) return;
     try {
@@ -585,6 +778,7 @@ export default function App() {
     fetchRoles();
     refreshEmployees();
     refreshShifts();
+    fetchAttendanceLogs();
     if (!employeeForm.id && !employeeForm.branch_id) {
       setEmployeeForm(prev => ({ ...prev, branch_id: branchId || '' }));
     }
@@ -600,6 +794,18 @@ export default function App() {
     if (activeNav !== 'branches') return;
     refreshBranches();
   }, [activeNav, apiBase, token]);
+
+  useEffect(() => {
+    if (activeNav !== 'branches') return;
+    if (!tableBranchId && branches.length) {
+      setTableBranchId(branches[0].id);
+    }
+  }, [activeNav, branches]);
+
+  useEffect(() => {
+    if (activeNav !== 'branches') return;
+    refreshTables(tableBranchId);
+  }, [activeNav, tableBranchId, apiBase, token]);
 
   useEffect(() => {
     if (!selectedRoleId) return;
@@ -618,7 +824,9 @@ export default function App() {
         if (msg.event?.startsWith('product.') || msg.event?.startsWith('product_category.')) fetchMenuData();
         if (msg.event?.startsWith('inventory.category.') || msg.event?.startsWith('inventory.stocktake.')) fetchInventoryMeta();
         if (msg.event?.startsWith('employee.') || msg.event?.startsWith('user.status.')) refreshEmployees();
-        if (msg.event?.startsWith('branch.location.')) refreshBranches();
+        if (msg.event?.startsWith('branch.')) refreshBranches();
+        if (msg.event?.startsWith('table.')) refreshTables(tableBranchId);
+        if (msg.event?.startsWith('attendance.')) fetchAttendanceLogs();
       } catch {
         // ignore
       }
@@ -1781,6 +1989,53 @@ export default function App() {
             </div>
             <div className="card">
               <div className="card-head">
+                <h3>Lịch sử chấm công</h3>
+                <button className="btn ghost" onClick={fetchAttendanceLogs}>Làm mới</button>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Nhân viên</label>
+                  <select value={attendanceFilters.employee_id} onChange={(e) => setAttendanceFilters({ ...attendanceFilters, employee_id: e.target.value })}>
+                    <option value="">Tất cả</option>
+                    {employees.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.full_name || emp.username}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Từ ngày</label>
+                  <input type="date" value={attendanceFilters.from} onChange={(e) => setAttendanceFilters({ ...attendanceFilters, from: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Đến ngày</label>
+                  <input type="date" value={attendanceFilters.to} onChange={(e) => setAttendanceFilters({ ...attendanceFilters, to: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn primary" onClick={fetchAttendanceLogs}>Lọc</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nhân viên</span>
+                  <span>Ca</span>
+                  <span>Check-in</span>
+                  <span>Trạng thái</span>
+                  <span>Check-out</span>
+                  <span>Trạng thái</span>
+                </div>
+                {attendanceLogs.slice(0, 12).map(log => (
+                  <div key={log.id} className="table-row">
+                    <span>{log.full_name || log.employee_id}</span>
+                    <span>{log.shift_name || log.shift_id || '---'}</span>
+                    <span>{log.check_in ? new Date(log.check_in).toLocaleString('vi-VN') : '---'}</span>
+                    <span>{log.check_in_status ? `${log.check_in_status} (${log.check_in_diff_minutes}m)` : '---'}</span>
+                    <span>{log.check_out ? new Date(log.check_out).toLocaleString('vi-VN') : '---'}</span>
+                    <span>{log.check_out_status ? `${log.check_out_status} (${log.check_out_diff_minutes}m)` : '---'}</span>
+                  </div>
+                ))}
+                {attendanceLogs.length === 0 && <div className="empty">Chưa có dữ liệu chấm công.</div>}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
                 <h3>{employeeForm.id ? 'Cập nhật nhân viên' : 'Thêm nhân viên'}</h3>
                 <span>{employees.length} nhân viên</span>
               </div>
@@ -1929,39 +2184,6 @@ export default function App() {
 
             <div className="card">
               <div className="card-head">
-                <h3>Quyền (Permissions)</h3>
-                <span>{permissions.length} quyền</span>
-              </div>
-              <div className="form-grid">
-                <div className="form-row">
-                  <label>Mã quyền</label>
-                  <input value={newPermission.code} onChange={(e) => setNewPermission({ ...newPermission, code: e.target.value })} placeholder="VD: ORDERS_VIEW" />
-                </div>
-                <div className="form-row">
-                  <label>Mô tả</label>
-                  <input value={newPermission.description} onChange={(e) => setNewPermission({ ...newPermission, description: e.target.value })} placeholder="Mô tả ngắn" />
-                </div>
-              </div>
-              <button className="btn primary" onClick={handleCreatePermission}>Tạo quyền</button>
-              <div className="table">
-                <div className="table-row head">
-                  <span>Mã</span>
-                  <span>Mô tả</span>
-                  <span></span>
-                </div>
-                {permissions.map(perm => (
-                  <div key={perm.id} className="table-row">
-                    <span>{perm.code}</span>
-                    <span>{perm.description || '---'}</span>
-                    <span></span>
-                  </div>
-                ))}
-                {permissions.length === 0 && <div className="empty">Chưa có quyền.</div>}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-head">
                 <h3>Gán quyền cho role</h3>
               </div>
               <div className="form-grid">
@@ -1974,34 +2196,29 @@ export default function App() {
                     ))}
                   </select>
                 </div>
-                <div className="form-row">
-                  <label>Permission</label>
-                  <select value={selectedPermissionId} onChange={(e) => setSelectedPermissionId(e.target.value)}>
-                    <option value="">Chọn quyền</option>
-                    {permissions.map(perm => (
-                      <option key={perm.id} value={perm.id}>{perm.code}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
-              <button className="btn primary" onClick={handleAssignPermissionToRole}>Gán quyền</button>
               <div className="table">
                 <div className="table-row head">
-                  <span>Quyền đã gán</span>
+                  <span>Quyền</span>
                   <span>Mô tả</span>
-                  <span></span>
+                  <span>Gán</span>
                 </div>
-                {(rolePermissions[selectedRoleId] || []).map(perm => (
+                {permissions.map(perm => (
                   <div key={perm.id} className="table-row">
                     <span>{perm.code}</span>
                     <span>{perm.description || '---'}</span>
-                    <span></span>
+                    <span>
+                      <input
+                        type="checkbox"
+                        checked={assignedPermissionIds.has(perm.id)}
+                        onChange={(e) => handleToggleRolePermission(perm.id, e.target.checked)}
+                        disabled={!selectedRoleId}
+                      />
+                    </span>
                   </div>
                 ))}
-                {selectedRoleId && (rolePermissions[selectedRoleId] || []).length === 0 && (
-                  <div className="empty">Role chưa có quyền.</div>
-                )}
-                {!selectedRoleId && <div className="empty">Chọn role để xem quyền.</div>}
+                {permissions.length === 0 && <div className="empty">Chưa có quyền.</div>}
+                {!selectedRoleId && permissions.length > 0 && <div className="empty">Chọn role để gán quyền.</div>}
               </div>
             </div>
           </section>
@@ -2020,7 +2237,7 @@ export default function App() {
                   <span>Địa chỉ</span>
                   <span>Lat</span>
                   <span>Lng</span>
-                  <span></span>
+                  <span>Hành động</span>
                 </div>
                 {branches.map(branch => (
                   <div key={branch.id} className="table-row">
@@ -2030,10 +2247,49 @@ export default function App() {
                     <span>{branch.longitude ?? '---'}</span>
                     <span>
                       <button className="btn ghost" onClick={() => handleEditBranch(branch)}>Sửa</button>
+                      <button className="btn danger" onClick={() => handleDeleteBranch(branch)}>Xóa</button>
                     </span>
                   </div>
                 ))}
                 {branches.length === 0 && <div className="empty">Chưa có chi nhánh.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Thông tin chi nhánh</h3>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Chi nhánh</label>
+                  <select
+                    value={branchForm.id}
+                    onChange={(e) => {
+                      const selected = branches.find(b => b.id === e.target.value);
+                      if (selected) handleEditBranch(selected);
+                      else setBranchForm({ id: '', name: '', address: '', latitude: '', longitude: '' });
+                    }}
+                  >
+                    <option value="">Chọn chi nhánh</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Tên chi nhánh</label>
+                  <input value={branchForm.name} onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })} placeholder="Chi nhánh 1" />
+                </div>
+                <div className="form-row">
+                  <label>Địa chỉ</label>
+                  <input value={branchForm.address} onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })} placeholder="Số nhà, đường, quận" />
+                </div>
+              </div>
+              <div className="actions">
+                <button className="btn primary" onClick={handleCreateBranch}>Tạo mới</button>
+                <button className="btn ghost" onClick={handleUpdateBranchInfo} disabled={!branchForm.id}>Cập nhật</button>
+                <button className="btn danger" onClick={() => handleDeleteBranch(branchForm)} disabled={!branchForm.id}>Xóa</button>
+                <button className="btn ghost" onClick={() => setBranchForm({ id: '', name: '', address: '', latitude: '', longitude: '' })}>Làm mới</button>
               </div>
             </div>
 
@@ -2068,6 +2324,72 @@ export default function App() {
                 </div>
               </div>
               <button className="btn primary" onClick={handleUpdateBranchLocation}>Lưu tọa độ</button>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Danh sách bàn</h3>
+                <button className="btn ghost" onClick={() => refreshTables(tableBranchId)}>Làm mới</button>
+              </div>
+              <div className="form-row">
+                <label>Chi nhánh</label>
+                <select
+                  value={tableBranchId}
+                  onChange={(e) => {
+                    setTableBranchId(e.target.value);
+                    setTableForm({ id: '', name: '', status: 'AVAILABLE' });
+                  }}
+                >
+                  <option value="">Chọn chi nhánh</option>
+                  {branches.map(branch => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Tên bàn</span>
+                  <span>Trạng thái</span>
+                  <span>Hành động</span>
+                </div>
+                {tables.map(table => (
+                  <div key={table.id} className="table-row">
+                    <span>{table.name}</span>
+                    <span>{table.status}</span>
+                    <span>
+                      <button className="btn ghost" onClick={() => handleEditTable(table)}>Sửa</button>
+                      <button className="btn danger" onClick={() => handleDeleteTable(table)}>Xóa</button>
+                    </span>
+                  </div>
+                ))}
+                {tables.length === 0 && <div className="empty">Chưa có bàn.</div>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Tạo/Cập nhật bàn</h3>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Tên bàn</label>
+                  <input value={tableForm.name} onChange={(e) => setTableForm({ ...tableForm, name: e.target.value })} placeholder="Bàn 1" />
+                </div>
+                <div className="form-row">
+                  <label>Trạng thái</label>
+                  <select value={tableForm.status} onChange={(e) => setTableForm({ ...tableForm, status: e.target.value })}>
+                    <option value="AVAILABLE">AVAILABLE</option>
+                    <option value="OCCUPIED">OCCUPIED</option>
+                    <option value="RESERVED">RESERVED</option>
+                    <option value="OUT_OF_SERVICE">OUT_OF_SERVICE</option>
+                  </select>
+                </div>
+              </div>
+              <div className="actions">
+                <button className="btn primary" onClick={handleCreateTable}>Tạo mới</button>
+                <button className="btn ghost" onClick={handleUpdateTable} disabled={!tableForm.id}>Cập nhật</button>
+                <button className="btn ghost" onClick={() => setTableForm({ id: '', name: '', status: 'AVAILABLE' })}>Làm mới</button>
+              </div>
             </div>
           </section>
         )}

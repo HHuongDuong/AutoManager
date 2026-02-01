@@ -45,4 +45,20 @@ async function redisSet(key, value, ttlSec = 60) {
   }
 }
 
-module.exports = { getRedis, redisPing, redisGet, redisSet };
+async function redisDelPattern(pattern) {
+  const client = getRedis();
+  if (!client) return;
+  try {
+    await client.connect();
+    let cursor = '0';
+    do {
+      const [next, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      if (keys.length) await client.del(keys);
+      cursor = next;
+    } while (cursor !== '0');
+  } catch (err) {
+    // ignore
+  }
+}
+
+module.exports = { getRedis, redisPing, redisGet, redisSet, redisDelPattern };

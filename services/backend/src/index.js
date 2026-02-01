@@ -10,7 +10,7 @@ const { randomUUID } = require('crypto');
 const multer = require('multer');
 const db = require('./db');
 const { signToken, authenticate, requirePermission } = require('./auth');
-const { redisPing, redisGet, redisSet } = require('./infra/redis');
+const { redisPing, redisGet, redisSet, redisDelPattern } = require('./infra/redis');
 const { rabbitPing, publish } = require('./infra/rabbit');
 const { issueInvoice } = require('./infra/einvoice');
 const { buildReceiptPayload, renderReceiptText, renderReceiptHtml } = require('./receipt');
@@ -324,6 +324,14 @@ app.post('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBA
   return res.status(201).json({ role_id: roleId, permission_id });
 });
 
+app.delete('/rbac/roles/:roleId/permissions/:permissionId', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const { roleId, permissionId } = req.params;
+  const result = await db.query('DELETE FROM role_permissions WHERE role_id = $1 AND permission_id = $2', [roleId, permissionId]);
+  if (result.rowCount === 0) return res.status(404).json({ error: 'not_found' });
+  publishRealtime('rbac.role.permission.removed', { role_id: roleId, permission_id: permissionId }, null);
+  return res.json({ deleted: true });
+});
+
 app.get('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const { roleId } = req.params;
   const result = await db.query(
@@ -358,6 +366,39 @@ app.post('/rbac/users/:userId/branches', authenticate, requirePermission('RBAC_M
 app.get('/branches', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const result = await db.query('SELECT id, name, address, latitude, longitude FROM branches ORDER BY name');
   return res.json(result.rows);
+});
+
+app.post('/branches', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const { name, address } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name_required' });
+  const result = await db.query(
+    'INSERT INTO branches (id, name, address) VALUES ($1, $2, $3) RETURNING id, name, address, latitude, longitude',
+    [randomUUID(), name, address || null]
+  );
+  await writeAuditLog(req, 'BRANCH_CREATE', 'branch', result.rows[0].id, { name, address: address || null });
+  publishRealtime('branch.created', result.rows[0], null);
+  return res.status(201).json(result.rows[0]);
+});
+
+app.patch('/branches/:id', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const { name, address } = req.body || {};
+  if (!name && !address) return res.status(400).json({ error: 'name_or_address_required' });
+  const result = await db.query(
+    'UPDATE branches SET name = COALESCE($2, name), address = COALESCE($3, address) WHERE id = $1 RETURNING id, name, address, latitude, longitude',
+    [req.params.id, name ?? null, address ?? null]
+  );
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req, 'BRANCH_UPDATE', 'branch', req.params.id, { name: name ?? null, address: address ?? null });
+  publishRealtime('branch.updated', result.rows[0], req.params.id);
+  return res.json(result.rows[0]);
+});
+
+app.delete('/branches/:id', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
+  const result = await db.query('DELETE FROM branches WHERE id = $1 RETURNING id', [req.params.id]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
+  await writeAuditLog(req, 'BRANCH_DELETE', 'branch', req.params.id, {});
+  publishRealtime('branch.deleted', { id: req.params.id }, req.params.id);
+  return res.json({ deleted: true });
 });
 
 app.patch('/branches/:id/location', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
@@ -967,6 +1008,10 @@ app.patch('/users/:id/status', authenticate, requirePermission('EMPLOYEE_MANAGE'
   return res.json(result.rows[0]);
 });
 
+async function invalidateProductsCache() {
+  await redisDelPattern('products:*');
+}
+
 // Product & Menu management
 app.get('/product-categories', authenticate, requirePermission('PRODUCT_VIEW'), async (req, res) => {
   const result = await db.query('SELECT id, name FROM product_categories ORDER BY name');
@@ -1043,6 +1088,7 @@ app.post('/products', authenticate, requirePermission('PRODUCT_MANAGE'), async (
   );
   await writeAuditLog(req, 'PRODUCT_CREATE', 'product', result.rows[0].id, { name, branch_id });
   publishRealtime('product.created', result.rows[0], branch_id);
+  await invalidateProductsCache();
   return res.status(201).json(result.rows[0]);
 });
 
@@ -1059,6 +1105,7 @@ app.patch('/products/:id', authenticate, requirePermission('PRODUCT_MANAGE'), as
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'PRODUCT_UPDATE', 'product', req.params.id, req.body);
   publishRealtime('product.updated', result.rows[0], prodBranch);
+  await invalidateProductsCache();
   return res.json(result.rows[0]);
 });
 
@@ -1071,6 +1118,7 @@ app.delete('/products/:id', authenticate, requirePermission('PRODUCT_MANAGE'), a
   if (result.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   await writeAuditLog(req, 'PRODUCT_DELETE', 'product', req.params.id, {});
   publishRealtime('product.deleted', { id: req.params.id }, prodBranch);
+  await invalidateProductsCache();
   return res.json({ deleted: true });
 });
 
@@ -1124,6 +1172,7 @@ app.put('/products/:id/branch-price', authenticate, requirePermission('PRODUCT_M
   );
   await writeAuditLog(req, 'PRODUCT_BRANCH_PRICE_UPDATE', 'product', req.params.id, { branch_id, price: Number(price) });
   publishRealtime('product.branch_price.updated', result.rows[0], branch_id);
+  await invalidateProductsCache();
   return res.json(result.rows[0]);
 });
 
@@ -1141,6 +1190,7 @@ app.post('/products/:id/image', authenticate, requirePermission('PRODUCT_MANAGE'
     );
     await writeAuditLog(req, 'PRODUCT_IMAGE_UPDATE', 'product', req.params.id, { image_url: imageUrl });
     publishRealtime('product.image.updated', { id: req.params.id, image_url: imageUrl }, prodBranch);
+    await invalidateProductsCache();
     return res.json(result.rows[0]);
   } catch (err) {
     return res.status(500).json({ error: 'image_upload_failed', detail: err.message });
@@ -1817,6 +1867,63 @@ app.post('/attendance/checkout', authenticate, requirePermission('ATTENDANCE_MAN
     check_out_status: checkOutStatus?.status || null,
     check_out_diff_minutes: checkOutStatus?.diff_minutes ?? null
   });
+});
+
+app.get('/attendance/logs', authenticate, requirePermission('ATTENDANCE_VIEW'), async (req, res) => {
+  const { branch_id, employee_id, from, to } = req.query || {};
+  const params = [];
+  const filters = [];
+  if (employee_id) { params.push(employee_id); filters.push(`a.employee_id = $${params.length}`); }
+  if (from) { params.push(from); filters.push(`a.check_in >= $${params.length}`); }
+  if (to) { params.push(to); filters.push(`a.check_out <= $${params.length}`); }
+  if (branch_id) {
+    if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(branch_id);
+    filters.push(`e.branch_id = $${params.length}`);
+  } else if (!req.user?.permissions?.includes('RBAC_MANAGE')) {
+    const allowed = await getAllowedBranchIds(req.user.sub);
+    if (allowed.length === 0) return res.status(403).json({ error: 'branch_forbidden' });
+    params.push(allowed);
+    filters.push(`e.branch_id = ANY($${params.length})`);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const result = await db.query(
+    `SELECT a.id, a.employee_id, e.full_name, e.branch_id,
+            a.shift_id, s.name AS shift_name, s.start_time, s.end_time,
+            a.check_in, a.check_out
+     FROM attendance a
+     JOIN employees e ON e.id = a.employee_id
+     LEFT JOIN shifts s ON s.id = a.shift_id
+     ${where}
+     ORDER BY a.check_in DESC`,
+    params
+  );
+  const rows = result.rows.map(row => {
+    const checkIn = row.check_in ? new Date(row.check_in) : null;
+    const checkOut = row.check_out ? new Date(row.check_out) : null;
+    let checkInStatus = null;
+    let checkOutStatus = null;
+    if (row.start_time && checkIn) {
+      const [h, m] = String(row.start_time).split(':').map(Number);
+      const shiftStart = new Date(checkIn);
+      shiftStart.setHours(h || 0, m || 0, 0, 0);
+      checkInStatus = getShiftCheckStatus(shiftStart, checkIn);
+    }
+    if (row.end_time && checkOut) {
+      const [h, m] = String(row.end_time).split(':').map(Number);
+      const shiftEnd = new Date(checkOut);
+      shiftEnd.setHours(h || 0, m || 0, 0, 0);
+      checkOutStatus = getShiftCheckStatus(shiftEnd, checkOut);
+    }
+    return {
+      ...row,
+      check_in_status: checkInStatus?.status || null,
+      check_in_diff_minutes: checkInStatus?.diff_minutes ?? null,
+      check_out_status: checkOutStatus?.status || null,
+      check_out_diff_minutes: checkOutStatus?.diff_minutes ?? null
+    };
+  });
+  return res.json(rows);
 });
 
 // AI (optional) - simple demand forecast
