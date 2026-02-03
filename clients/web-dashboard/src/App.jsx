@@ -116,10 +116,6 @@ export default function App() {
     setLoading(true);
     setStatusMessage('');
     try {
-      if (token === 'demo-token') {
-        setLoading(false);
-        return;
-      }
       const headers = { Authorization: `Bearer ${token}` };
       const params = new URLSearchParams();
       if (branchId) params.set('branch_id', branchId);
@@ -149,9 +145,7 @@ export default function App() {
 
       setInventoryAlerts([]);
     } catch (err) {
-      if (token !== 'demo-token') {
-        setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
-      }
+      setStatusMessage('Không thể tải dữ liệu. Kiểm tra API hoặc quyền truy cập.');
     } finally {
       setLoading(false);
     }
@@ -207,10 +201,6 @@ export default function App() {
   const refreshEmployees = async () => {
     if (!token) return;
     try {
-      if (token === 'demo-token') {
-        setEmployees([]);
-        return;
-      }
       const headers = { Authorization: `Bearer ${token}` };
       const params = new URLSearchParams();
       if (branchId) params.set('branch_id', branchId);
@@ -226,13 +216,6 @@ export default function App() {
   const refreshShifts = async () => {
     if (!token) return;
     try {
-      if (token === 'demo-token') {
-        setShifts([
-          { id: 'demo-1', name: 'Ca sáng', start_time: '08:00', end_time: '12:00' },
-          { id: 'demo-2', name: 'Ca chiều', start_time: '13:00', end_time: '17:00' }
-        ]);
-        return;
-      }
       const res = await fetch(`${apiBase}/shifts`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -246,12 +229,6 @@ export default function App() {
   const refreshBranches = async () => {
     if (!token) return;
     try {
-      if (token === 'demo-token') {
-        setBranches([
-          { id: 'demo-branch-1', name: 'Chi nhánh A', address: 'Demo address', latitude: 10.776, longitude: 106.700 }
-        ]);
-        return;
-      }
       const res = await fetch(`${apiBase}/branches`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -268,13 +245,6 @@ export default function App() {
       return;
     }
     try {
-      if (token === 'demo-token') {
-        setTables([
-          { id: 'demo-table-1', branch_id: branchIdValue, name: 'Bàn 1', status: 'AVAILABLE' },
-          { id: 'demo-table-2', branch_id: branchIdValue, name: 'Bàn 2', status: 'OCCUPIED' }
-        ]);
-        return;
-      }
       const params = new URLSearchParams();
       params.set('branch_id', branchIdValue);
       const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
@@ -290,27 +260,6 @@ export default function App() {
   const fetchAttendanceLogs = async () => {
     if (!token) return;
     try {
-      if (token === 'demo-token') {
-        setAttendanceLogs([
-          {
-            id: 'demo-att-1',
-            employee_id: 'demo-emp',
-            full_name: 'Nhân viên Demo',
-            branch_id: branchId || 'demo-branch-1',
-            shift_id: 'demo-1',
-            shift_name: 'Ca sáng',
-            start_time: '08:00',
-            end_time: '12:00',
-            check_in: new Date().toISOString(),
-            check_out: null,
-            check_in_status: 'EARLY',
-            check_in_diff_minutes: -5,
-            check_out_status: null,
-            check_out_diff_minutes: null
-          }
-        ]);
-        return;
-      }
       const params = new URLSearchParams();
       if (branchId) params.set('branch_id', branchId);
       if (attendanceFilters.employee_id) params.set('employee_id', attendanceFilters.employee_id);
@@ -509,19 +458,6 @@ export default function App() {
   const handleToggleRolePermission = async (permissionId, isChecked) => {
     if (!selectedRoleId) {
       setStatusMessage('Chọn role trước khi gán quyền.');
-      return;
-    }
-    if (token === 'demo-token') {
-      const perm = permissions.find(p => p.id === permissionId);
-      setRolePermissions(prev => {
-        const current = prev[selectedRoleId] || [];
-        if (isChecked) {
-          if (!perm) return prev;
-          return { ...prev, [selectedRoleId]: [...current, perm] };
-        }
-        return { ...prev, [selectedRoleId]: current.filter(p => p.id !== permissionId) };
-      });
-      setStatusMessage(isChecked ? 'Đã gán quyền (demo).' : 'Đã bỏ gán quyền (demo).');
       return;
     }
     try {
@@ -836,14 +772,6 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
-    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
-      localStorage.setItem('token', 'demo-token');
-      localStorage.setItem('apiBase', apiBase);
-      setToken('demo-token');
-      setShowLogin(false);
-      setStatusMessage('Đang dùng tài khoản demo offline.');
-      return;
-    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -924,10 +852,7 @@ export default function App() {
       const data = await res.json();
       setAiSuggest(data.suggestions || []);
     } catch (err) {
-      setAiSuggest([
-        { ingredient_id: 'demo-1', reorder_qty: 12, avg_daily: 5.4, target_stock: 38 },
-        { ingredient_id: 'demo-2', reorder_qty: 8, avg_daily: 3.2, target_stock: 22 }
-      ]);
+      setAiSuggest([]);
     }
   };
 
@@ -2495,9 +2420,6 @@ export default function App() {
                   <label>Mật khẩu</label>
                   <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
                 </div>
-                <div className="form-row">
-                  <small className="hint">Demo offline: admin / admin123</small>
-                </div>
                 {token && (
                   <>
                     <div className="form-row">
@@ -2515,6 +2437,7 @@ export default function App() {
                   </>
                 )}
               </div>
+              {statusMessage && <div className="status">{statusMessage}</div>}
             </div>
             <footer>
               {token && (

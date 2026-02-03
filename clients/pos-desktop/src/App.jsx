@@ -477,14 +477,6 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
-    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
-      localStorage.setItem('token', 'demo-token');
-      localStorage.setItem('apiBase', apiBase);
-      setToken('demo-token');
-      setShowLogin(false);
-      setStatusMessage('Đang dùng tài khoản demo offline.');
-      return;
-    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -1072,9 +1064,6 @@ export default function App() {
                 <div className="form-row">
                   <label>Mật khẩu</label>
                   <input type="password" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
-                </div>
-                <div className="form-row">
-                  <small className="hint">Demo offline: admin / admin123</small>
                 </div>
                 {token && (
                   <>

@@ -157,13 +157,6 @@ export default function App() {
     if (!token) return;
     const fetchShifts = async () => {
       try {
-        if (token === 'demo-token') {
-          setShifts([
-            { id: 'demo-1', name: 'Ca sáng', start_time: '08:00', end_time: '12:00' },
-            { id: 'demo-2', name: 'Ca chiều', start_time: '13:00', end_time: '17:00' }
-          ]);
-          return;
-        }
         const res = await fetch(`${apiBase}/shifts`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -412,14 +405,6 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
-    if (loginForm.username === 'admin' && loginForm.password === 'admin123') {
-      await AsyncStorage.setItem('token', 'demo-token');
-      await persistSetting('apiBase', apiBase);
-      setToken('demo-token');
-      setShowLogin(false);
-      setStatusMessage('Đang dùng tài khoản demo offline.');
-      return;
-    }
     try {
       const res = await fetch(`${apiBase}/auth/login`, {
         method: 'POST',
@@ -980,7 +965,6 @@ export default function App() {
               placeholder="Password"
               secureTextEntry
             />
-            <Text style={styles.muted}>Demo offline: admin / admin123</Text>
             {token && (
               <>
                 <TextInput

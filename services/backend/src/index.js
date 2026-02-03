@@ -1,3 +1,5 @@
+require('dotenv').config();
+require('express-async-errors');
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -191,10 +193,12 @@ function getShiftCheckStatus(shiftTime, checkTime) {
   };
 }
 
-app.post('/auth/register', async (req, res) => {
+app.post('/auth/register', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   try {
     const { username, password, role_ids = [] } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'username_password_required' });
+    const existsRes = await db.query('SELECT 1 FROM users WHERE username = $1', [username]);
+    if (existsRes.rows.length > 0) return res.status(409).json({ error: 'username_exists' });
     const password_hash = await bcrypt.hash(password, 10);
     const userRes = await db.query(
       'INSERT INTO users (id, username, password_hash, is_active) VALUES ($1, $2, $3, true) RETURNING id, username',
@@ -296,6 +300,8 @@ app.get('/rbac/roles', authenticate, requirePermission('RBAC_MANAGE'), async (re
 app.post('/rbac/roles', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
+  const existsRes = await db.query('SELECT 1 FROM roles WHERE name = $1', [name]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'role_exists' });
   const result = await db.query('INSERT INTO roles (id, name) VALUES ($1, $2) RETURNING id, name', [randomUUID(), name]);
   publishRealtime('rbac.role.created', { id: result.rows[0].id, name: result.rows[0].name }, null);
   return res.status(201).json(result.rows[0]);
@@ -309,6 +315,8 @@ app.get('/rbac/permissions', authenticate, requirePermission('RBAC_MANAGE'), asy
 app.post('/rbac/permissions', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const { code, description } = req.body || {};
   if (!code) return res.status(400).json({ error: 'code_required' });
+  const existsRes = await db.query('SELECT 1 FROM permissions WHERE code = $1', [code]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'permission_exists' });
   const result = await db.query(
     'INSERT INTO permissions (id, code, description) VALUES ($1, $2, $3) RETURNING id, code, description',
     [randomUUID(), code, description || null]
@@ -321,6 +329,11 @@ app.post('/rbac/roles/:roleId/permissions', authenticate, requirePermission('RBA
   const { roleId } = req.params;
   const { permission_id } = req.body || {};
   if (!permission_id) return res.status(400).json({ error: 'permission_id_required' });
+  const existsRes = await db.query(
+    'SELECT 1 FROM role_permissions WHERE role_id = $1 AND permission_id = $2',
+    [roleId, permission_id]
+  );
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'role_permission_exists' });
   await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)', [roleId, permission_id]);
   publishRealtime('rbac.role.permission.added', { role_id: roleId, permission_id }, null);
   return res.status(201).json({ role_id: roleId, permission_id });
@@ -351,6 +364,11 @@ app.post('/rbac/users/:userId/roles', authenticate, requirePermission('RBAC_MANA
   const { userId } = req.params;
   const { role_id } = req.body || {};
   if (!role_id) return res.status(400).json({ error: 'role_id_required' });
+  const existsRes = await db.query(
+    'SELECT 1 FROM user_roles WHERE user_id = $1 AND role_id = $2',
+    [userId, role_id]
+  );
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'user_role_exists' });
   await db.query('INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)', [userId, role_id]);
   publishRealtime('rbac.user.role.added', { user_id: userId, role_id }, null);
   return res.status(201).json({ user_id: userId, role_id });
@@ -360,6 +378,11 @@ app.post('/rbac/users/:userId/branches', authenticate, requirePermission('RBAC_M
   const { userId } = req.params;
   const { branch_id } = req.body || {};
   if (!branch_id) return res.status(400).json({ error: 'branch_id_required' });
+  const existsRes = await db.query(
+    'SELECT 1 FROM user_branch_access WHERE user_id = $1 AND branch_id = $2',
+    [userId, branch_id]
+  );
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'user_branch_exists' });
   await db.query('INSERT INTO user_branch_access (user_id, branch_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, branch_id]);
   publishRealtime('rbac.user.branch.added', { user_id: userId, branch_id }, branch_id);
   return res.status(201).json({ user_id: userId, branch_id });
@@ -373,6 +396,8 @@ app.get('/branches', authenticate, requirePermission('RBAC_MANAGE'), async (req,
 app.post('/branches', authenticate, requirePermission('RBAC_MANAGE'), async (req, res) => {
   const { name, address } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
+  const existsRes = await db.query('SELECT 1 FROM branches WHERE name = $1', [name]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'branch_exists' });
   const result = await db.query(
     'INSERT INTO branches (id, name, address) VALUES ($1, $2, $3) RETURNING id, name, address, latitude, longitude',
     [randomUUID(), name, address || null]
@@ -849,6 +874,8 @@ app.post('/tables', authenticate, requirePermission('TABLE_MANAGE'), async (req,
   const { branch_id, name, status } = req.body || {};
   if (!branch_id || !name) return res.status(400).json({ error: 'branch_id_name_required' });
   if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+  const existsRes = await db.query('SELECT 1 FROM tables WHERE branch_id = $1 AND name = $2', [branch_id, name]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'table_exists' });
   const result = await db.query(
     'INSERT INTO tables (id, branch_id, name, status) VALUES ($1, $2, $3, $4) RETURNING id, branch_id, name, status',
     [randomUUID(), branch_id, name, status || 'AVAILABLE']
@@ -945,6 +972,8 @@ app.post('/employees', authenticate, requirePermission('EMPLOYEE_MANAGE'), async
     const { username, password, branch_id, full_name, phone, position } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'username_password_required' });
     if (branch_id && !(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+    const existsRes = await db.query('SELECT 1 FROM users WHERE username = $1', [username]);
+    if (existsRes.rows.length > 0) return res.status(409).json({ error: 'username_exists' });
     const password_hash = await bcrypt.hash(password, 10);
     const userId = randomUUID();
     await db.query(
@@ -960,6 +989,8 @@ app.post('/employees', authenticate, requirePermission('EMPLOYEE_MANAGE'), async
     publishRealtime('employee.created', { id: employeeId, user_id: userId, username, full_name, phone, position, branch_id: branch_id || null }, branch_id || null);
     return res.status(201).json({ id: employeeId, user_id: userId, username, full_name, phone, position, branch_id });
   } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'unique_violation', detail: err.detail || err.message });
+    if (err.code === '22P02') return res.status(400).json({ error: 'invalid_input', detail: err.detail || err.message });
     return res.status(500).json({ error: 'employee_create_failed', detail: err.message });
   }
 });
@@ -1023,6 +1054,8 @@ app.get('/product-categories', authenticate, requirePermission('PRODUCT_VIEW'), 
 app.post('/product-categories', authenticate, requirePermission('PRODUCT_MANAGE'), async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
+  const existsRes = await db.query('SELECT 1 FROM product_categories WHERE name = $1', [name]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'category_exists' });
   const result = await db.query('INSERT INTO product_categories (id, name) VALUES ($1, $2) RETURNING id, name', [randomUUID(), name]);
   await writeAuditLog(req, 'CATEGORY_CREATE', 'product_category', result.rows[0].id, { name });
   publishRealtime('product_category.created', { id: result.rows[0].id, name }, null);
@@ -1134,6 +1167,8 @@ app.get('/inventory/categories', authenticate, requirePermission('INVENTORY_VIEW
 app.post('/inventory/categories', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
+  const existsRes = await db.query('SELECT 1 FROM inventory_categories WHERE name = $1', [name]);
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'inventory_category_exists' });
   const result = await db.query('INSERT INTO inventory_categories (id, name) VALUES ($1, $2) RETURNING id, name, created_at', [randomUUID(), name]);
   await writeAuditLog(req, 'INVENTORY_CATEGORY_CREATE', 'inventory_category', result.rows[0].id, { name });
   publishRealtime('inventory.category.created', result.rows[0], null);
@@ -1223,6 +1258,11 @@ app.get('/ingredients', authenticate, requirePermission('INVENTORY_VIEW'), async
 app.post('/ingredients', authenticate, requirePermission('INVENTORY_MANAGE'), async (req, res) => {
   const { name, unit, category_id } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name_required' });
+  const existsRes = await db.query(
+    'SELECT 1 FROM ingredients WHERE name = $1 AND (category_id IS NOT DISTINCT FROM $2)',
+    [name, category_id || null]
+  );
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'ingredient_exists' });
   const result = await db.query(
     'INSERT INTO ingredients (id, name, unit, category_id) VALUES ($1, $2, $3, $4) RETURNING id, name, unit, category_id',
     [randomUUID(), name, unit || null, category_id || null]
@@ -1583,7 +1623,7 @@ app.get('/reports/revenue', authenticate, requirePermission('REPORT_VIEW'), asyn
 app.get('/reports/revenue/export', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
   const { branch_id, from, to, group_by = 'day', format = 'csv' } = req.query || {};
   const params = [];
-  const filters = ['payment_status = "PAID"'];
+  const filters = ["payment_status = 'PAID'"];
   if (branch_id) {
     if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
     params.push(branch_id);
@@ -1765,6 +1805,11 @@ app.get('/shifts', authenticate, requirePermission('ATTENDANCE_VIEW'), async (re
 app.post('/shifts', authenticate, requirePermission('ATTENDANCE_MANAGE'), async (req, res) => {
   const { name, start_time, end_time } = req.body || {};
   if (!name || !start_time || !end_time) return res.status(400).json({ error: 'name_start_end_required' });
+  const existsRes = await db.query(
+    'SELECT 1 FROM shifts WHERE name = $1 AND start_time = $2 AND end_time = $3',
+    [name, start_time, end_time]
+  );
+  if (existsRes.rows.length > 0) return res.status(409).json({ error: 'shift_exists' });
   const result = await db.query(
     'INSERT INTO shifts (id, name, start_time, end_time) VALUES ($1, $2, $3, $4) RETURNING id, name, start_time, end_time',
     [randomUUID(), name, start_time, end_time]
@@ -1974,6 +2019,27 @@ app.post('/ai/suggest-reorder', authenticate, requirePermission('AI_USE'), async
 
   await writeAuditLog(req, 'AI_REORDER_SUGGEST', 'ai', null, { branch_id, count: suggestions.length });
   return res.json({ branch_id, suggestions });
+});
+
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (err.message === 'invalid_image_type') {
+    return res.status(400).json({ error: 'invalid_image_type' });
+  }
+  if (err.code === '23505') {
+    return res.status(409).json({ error: 'unique_violation', detail: err.detail || err.message });
+  }
+  if (err.code === '23503') {
+    return res.status(409).json({ error: 'foreign_key_violation', detail: err.detail || err.message });
+  }
+  if (err.code === '22P02') {
+    return res.status(400).json({ error: 'invalid_input', detail: err.detail || err.message });
+  }
+  if (err.code === '23502') {
+    return res.status(400).json({ error: 'not_null_violation', detail: err.detail || err.message });
+  }
+  console.error('unhandled_error', err);
+  return res.status(500).json({ error: 'internal_error', detail: err.message });
 });
 
 const port = process.env.PORT || 3000;
