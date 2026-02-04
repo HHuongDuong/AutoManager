@@ -102,6 +102,8 @@ export default function App() {
 
   const orderCount = useMemo(() => orders.length, [orders]);
   const categoryMap = useMemo(() => new Map(categories.map(cat => [cat.id, cat.name])), [categories]);
+  const branchNameMap = useMemo(() => new Map(branches.map(branch => [branch.id, branch.name])), [branches]);
+  const ingredientMap = useMemo(() => new Map(ingredients.map(ing => [ing.id, ing.name])), [ingredients]);
   const assignedPermissionIds = useMemo(
     () => new Set((rolePermissions[selectedRoleId] || []).map(perm => perm.id)),
     [rolePermissions, selectedRoleId]
@@ -700,6 +702,14 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    if (!token) {
+      setBranches([]);
+      return;
+    }
+    refreshBranches();
+  }, [token, apiBase]);
+
+  useEffect(() => {
     if (activeNav !== 'menu') return;
     fetchMenuData();
   }, [activeNav, apiBase, branchId, categoryId, productSearch, token]);
@@ -1288,7 +1298,7 @@ export default function App() {
             <div className="sidebar-footer">
               <div>
                 <span>Chi nhánh</span>
-                <strong>{branchId || 'Chưa chọn'}</strong>
+                <strong>{branchNameMap.get(branchId) || 'Chưa chọn'}</strong>
               </div>
               <button className="btn ghost" onClick={() => setShowLogin(true)}>Cài đặt</button>
             </div>
@@ -1565,6 +1575,28 @@ export default function App() {
           <section className="grid">
             <div className="card">
               <div className="card-head">
+                <h3>Chi nhánh đang chọn</h3>
+              </div>
+              <div className="form-row">
+                <label>Chi nhánh</label>
+                <select
+                  value={branchId}
+                  onChange={(e) => {
+                    setBranchId(e.target.value);
+                    persistSettings();
+                  }}
+                  disabled={!branches.length}
+                >
+                  <option value="">Tất cả chi nhánh</option>
+                  {branches.map(branch => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+                {!branches.length && <small className="hint">Cần tải danh sách chi nhánh trước.</small>}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
                 <h3>Phân loại kho</h3>
                 <span>{inventoryCategories.length} nhóm</span>
               </div>
@@ -1709,7 +1741,7 @@ export default function App() {
                 </div>
                 {inventoryTx.slice(0, 8).map(tx => (
                   <div key={tx.id} className="table-row">
-                    <span>{tx.ingredient_id}</span>
+                    <span>{ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
                     <span>{tx.transaction_type}</span>
                     <span>{tx.quantity}</span>
                     <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
@@ -1778,7 +1810,7 @@ export default function App() {
                 </div>
                 {inventoryTx.filter(tx => tx.transaction_type === 'OUT').slice(0, 6).map(tx => (
                   <div key={tx.id} className="table-row">
-                    <span>{tx.ingredient_id}</span>
+                    <span>{ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
                     <span>{tx.quantity}</span>
                     <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
                     <span></span>
@@ -1821,7 +1853,7 @@ export default function App() {
                 </div>
                 {inventoryTx.filter(tx => tx.transaction_type === 'ADJUST').slice(0, 6).map(tx => (
                   <div key={tx.id} className="table-row">
-                    <span>{tx.ingredient_id}</span>
+                    <span>{ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
                     <span>{tx.quantity}</span>
                     <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
                     <span></span>
@@ -1844,7 +1876,7 @@ export default function App() {
                 </div>
                 {inventoryInputs.slice(0, 10).map(input => (
                   <div key={input.id} className="table-row">
-                    <span>{input.ingredient_id}</span>
+                    <span>{ingredientMap.get(input.ingredient_id) || input.ingredient_id}</span>
                     <span>{input.quantity}</span>
                     <span>{formatVnd(input.unit_cost || 0)}</span>
                     <strong>{formatVnd(input.total_cost || 0)}</strong>
@@ -1860,7 +1892,7 @@ export default function App() {
                 {aiSuggest.map(item => (
                   <div key={item.ingredient_id} className="list-item">
                     <div>
-                      <h4>{item.ingredient_id}</h4>
+                      <h4>{ingredientMap.get(item.ingredient_id) || item.ingredient_id}</h4>
                       <p>Avg: {item.avg_daily} / Target: {item.target_stock}</p>
                     </div>
                     <strong>{item.reorder_qty} đơn vị</strong>
@@ -1990,12 +2022,18 @@ export default function App() {
                   />
                 </div>
                 <div className="form-row">
-                  <label>Chi nhánh (branch_id)</label>
-                  <input
+                  <label>Chi nhánh</label>
+                  <select
                     value={employeeForm.branch_id}
                     onChange={(e) => setEmployeeForm({ ...employeeForm, branch_id: e.target.value })}
-                    placeholder={branchId || 'branch_id'}
-                  />
+                    disabled={!branches.length}
+                  >
+                    <option value="">Không gán chi nhánh</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                  {!branches.length && <small className="hint">Cần tải danh sách chi nhánh trước.</small>}
                 </div>
                 <div className="form-row">
                   <label>Tài khoản</label>
@@ -2048,7 +2086,7 @@ export default function App() {
                     <span>{emp.username || emp.user_id}</span>
                     <span>{emp.position || '---'}</span>
                     <span>{emp.phone || '---'}</span>
-                    <span>{emp.branch_id || '---'}</span>
+                    <span>{branchNameMap.get(emp.branch_id) || emp.branch_id || '---'}</span>
                     <span>{emp.is_active ? 'Đang hoạt động' : 'Đã khóa'}</span>
                     <span>
                       <div className="inline">
@@ -2322,6 +2360,23 @@ export default function App() {
         {activeNav === 'reports' && (
           <section className="grid">
             <div className="card">
+              <div className="form-row">
+                <label>Chi nhánh</label>
+                <select
+                  value={branchId}
+                  onChange={(e) => {
+                    setBranchId(e.target.value);
+                    persistSettings();
+                  }}
+                  disabled={!branches.length}
+                >
+                  <option value="">Tất cả chi nhánh</option>
+                  {branches.map(branch => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+                {!branches.length && <small className="hint">Cần tải danh sách chi nhánh trước.</small>}
+              </div>
               <h3>Tổng hợp doanh thu</h3>
               <p>Tổng doanh thu: {formatVnd(revenueSeries.reduce((sum, v) => sum + v, 0))}</p>
               <p>Đơn hàng: {orders.length}</p>
@@ -2410,7 +2465,20 @@ export default function App() {
                 </div>
                 <div className="form-row">
                   <label>Chi nhánh</label>
-                  <input value={branchId} onChange={(e) => setBranchId(e.target.value)} onBlur={persistSettings} placeholder="branch_id" />
+                  <select
+                    value={branchId}
+                    onChange={(e) => {
+                      setBranchId(e.target.value);
+                      persistSettings();
+                    }}
+                    disabled={!branches.length}
+                  >
+                    <option value="">Tất cả chi nhánh</option>
+                    {branches.map(branch => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                  {!branches.length && <small className="hint">Cần đăng nhập và có quyền để tải danh sách chi nhánh.</small>}
                 </div>
                 <div className="form-row">
                   <label>Tài khoản</label>

@@ -21,6 +21,7 @@ export default function App() {
   const [bluetoothConnected, setBluetoothConnected] = useState(false);
   const [token, setToken] = useState('');
   const [branchId, setBranchId] = useState('');
+  const [branches, setBranches] = useState([]);
   const [employeeId, setEmployeeId] = useState('');
   const [shiftId, setShiftId] = useState('');
   const [orderType, setOrderType] = useState('DINE_IN');
@@ -46,6 +47,10 @@ export default function App() {
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
+  const branchNameMap = useMemo(() => branches.reduce((acc, branch) => {
+    acc[branch.id] = branch.name || branch.code || branch.id;
+    return acc;
+  }, {}), [branches]);
 
   const getDeviceLocation = () => new Promise((resolve, reject) => {
     if (!navigator?.geolocation) {
@@ -151,6 +156,23 @@ export default function App() {
       }
     };
     fetchIngredients();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const fetchBranches = async () => {
+      try {
+        const res = await fetch(`${apiBase}/branches`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('fetch_failed');
+        const data = await res.json();
+        setBranches(data || []);
+      } catch (err) {
+        setBranches([]);
+      }
+    };
+    fetchBranches();
   }, [apiBase, token]);
 
   useEffect(() => {
@@ -519,7 +541,7 @@ export default function App() {
 
   const handleCreateOrder = async () => {
     if (!branchId) {
-      setStatusMessage('Cần branch_id để tạo đơn.');
+      setStatusMessage('Cần chọn chi nhánh để tạo đơn.');
       return;
     }
     if (orderType === 'DINE_IN' && !selectedTableId) {
@@ -586,7 +608,7 @@ export default function App() {
 
   const handleCreateInput = async () => {
     if (!branchId) {
-      setStatusMessage('Cần branch_id để nhập kho.');
+      setStatusMessage('Cần chọn chi nhánh để nhập kho.');
       return;
     }
     if (!inputForm.ingredient_id || !inputForm.quantity) {
@@ -647,13 +669,35 @@ export default function App() {
                 />
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Branch ID</Text>
-                <TextInput
-                  style={styles.input}
-                  value={branchId}
-                  onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
-                  placeholder="branch_id"
-                />
+                <Text style={styles.label}>Chi nhánh</Text>
+                <Text style={styles.muted}>{branchNameMap[branchId] || branchId || 'Chưa chọn'}</Text>
+                {branches.length > 0 ? (
+                  <View style={styles.productList}>
+                    {branches.map(branch => (
+                      <TouchableOpacity
+                        key={branch.id}
+                        style={styles.productCard}
+                        onPress={() => {
+                          setBranchId(branch.id);
+                          persistSetting('branchId', branch.id);
+                        }}
+                      >
+                        <View>
+                          <Text style={styles.productName}>{branch.name || branch.code || branch.id}</Text>
+                          <Text style={styles.productPrice}>{branch.address || branch.location || branch.id}</Text>
+                        </View>
+                        <Text style={styles.addBtn}>Chọn</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    value={branchId}
+                    onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
+                    placeholder="branch_id"
+                  />
+                )}
               </View>
             </View>
             <View style={styles.row}>
@@ -946,12 +990,35 @@ export default function App() {
               onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
               placeholder="API Base"
             />
-            <TextInput
-              style={styles.input}
-              value={branchId}
-              onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
-              placeholder="Branch ID"
-            />
+            <Text style={styles.label}>Chi nhánh</Text>
+            <Text style={styles.muted}>{branchNameMap[branchId] || branchId || 'Chưa chọn'}</Text>
+            {branches.length > 0 ? (
+              <View style={styles.productList}>
+                {branches.map(branch => (
+                  <TouchableOpacity
+                    key={branch.id}
+                    style={styles.productCard}
+                    onPress={() => {
+                      setBranchId(branch.id);
+                      persistSetting('branchId', branch.id);
+                    }}
+                  >
+                    <View>
+                      <Text style={styles.productName}>{branch.name || branch.code || branch.id}</Text>
+                      <Text style={styles.productPrice}>{branch.address || branch.location || branch.id}</Text>
+                    </View>
+                    <Text style={styles.addBtn}>Chọn</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <TextInput
+                style={styles.input}
+                value={branchId}
+                onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
+                placeholder="branch_id"
+              />
+            )}
             <TextInput
               style={styles.input}
               value={loginForm.username}

@@ -5,6 +5,7 @@ const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency',
 export default function App() {
   const [apiBase, setApiBase] = useState(localStorage.getItem('apiBase') || 'http://localhost:3000');
   const [branchId, setBranchId] = useState(localStorage.getItem('branchId') || '');
+  const [branches, setBranches] = useState([]);
   const [orderType, setOrderType] = useState(localStorage.getItem('orderType') || 'DINE_IN');
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [user, setUser] = useState(null);
@@ -124,6 +125,10 @@ export default function App() {
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
+  const branchNameMap = useMemo(() => branches.reduce((acc, branch) => {
+    acc[branch.id] = branch.name || branch.code || branch.id;
+    return acc;
+  }, {}), [branches]);
 
   const loadPrinters = async () => {
     if (!window?.electron?.printers?.list) return;
@@ -221,6 +226,20 @@ export default function App() {
     }
   };
 
+  const refreshBranches = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${apiBase}/branches`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setBranches(data || []);
+    } catch (err) {
+      setBranches([]);
+    }
+  };
+
   const refreshTables = async () => {
     if (!token || !branchId) return;
     try {
@@ -255,6 +274,10 @@ export default function App() {
 
   useEffect(() => {
     refreshIngredients();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    refreshBranches();
   }, [apiBase, token]);
 
   useEffect(() => {
@@ -691,7 +714,7 @@ export default function App() {
 
   const handleCreateInput = async () => {
     if (!branchId) {
-      setStatusMessage('Cần branch_id để nhập kho.');
+      setStatusMessage('Cần chọn chi nhánh để nhập kho.');
       return;
     }
     if (!inputForm.ingredient_id || !inputForm.quantity) {
@@ -760,7 +783,7 @@ export default function App() {
             <div className="top-actions">
               <div className="meta">
                 <span>Chi nhánh</span>
-                <strong>{branchId || 'Chưa chọn'}</strong>
+                <strong>{branchNameMap[branchId] || branchId || 'Chưa chọn'}</strong>
               </div>
               <div className="meta">
                 <span>Nhân viên</span>
@@ -1030,7 +1053,22 @@ export default function App() {
                 </div>
                 <div className="form-row">
                   <label>Chi nhánh</label>
-                  <input value={branchId} onChange={(e) => setBranchId(e.target.value)} onBlur={persistSettings} placeholder="branch_id" />
+                  {branches.length > 0 ? (
+                    <select
+                      value={branchId}
+                      onChange={(e) => {
+                        setBranchId(e.target.value);
+                        persistSettings();
+                      }}
+                    >
+                      <option value="">Chọn chi nhánh</option>
+                      {branches.map(branch => (
+                        <option key={branch.id} value={branch.id}>{branch.name || branch.code || branch.id}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={branchId} onChange={(e) => setBranchId(e.target.value)} onBlur={persistSettings} placeholder="branch_id" />
+                  )}
                 </div>
                 <div className="form-row">
                   <label>Loại đơn</label>

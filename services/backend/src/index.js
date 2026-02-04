@@ -972,22 +972,39 @@ app.post('/employees', authenticate, requirePermission('EMPLOYEE_MANAGE'), async
     const { username, password, branch_id, full_name, phone, position } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: 'username_password_required' });
     if (branch_id && !(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
-    const existsRes = await db.query('SELECT 1 FROM users WHERE username = $1', [username]);
-    if (existsRes.rows.length > 0) return res.status(409).json({ error: 'username_exists' });
-    const password_hash = await bcrypt.hash(password, 10);
-    const userId = randomUUID();
-    await db.query(
-      'INSERT INTO users (id, username, password_hash, is_active) VALUES ($1, $2, $3, true)',
-      [userId, username, password_hash]
-    );
-    const employeeId = randomUUID();
-    await db.query(
-      'INSERT INTO employees (id, user_id, branch_id, full_name, phone, position) VALUES ($1, $2, $3, $4, $5, $6)',
-      [employeeId, userId, branch_id || null, full_name || null, phone || null, position || null]
-    );
-    await writeAuditLog(req, 'EMPLOYEE_CREATE', 'employee', employeeId, { username, branch_id });
-    publishRealtime('employee.created', { id: employeeId, user_id: userId, username, full_name, phone, position, branch_id: branch_id || null }, branch_id || null);
-    return res.status(201).json({ id: employeeId, user_id: userId, username, full_name, phone, position, branch_id });
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (branch_id) {
+        const branchRes = await client.query('SELECT 1 FROM branches WHERE id = $1', [branch_id]);
+        if (branchRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'branch_not_found' });
+        }
+      }
+      const existsRes = await client.query('SELECT 1 FROM users WHERE username = $1', [username]);
+      if (existsRes.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'username_exists' });
+      }
+      const password_hash = await bcrypt.hash(password, 10);
+      const userId = randomUUID();
+      await client.query(
+        'INSERT INTO users (id, username, password_hash, is_active) VALUES ($1, $2, $3, true)',
+        [userId, username, password_hash]
+      );
+      const employeeId = randomUUID();
+      await client.query(
+        'INSERT INTO employees (id, user_id, branch_id, full_name, phone, position) VALUES ($1, $2, $3, $4, $5, $6)',
+        [employeeId, userId, branch_id || null, full_name || null, phone || null, position || null]
+      );
+      await client.query('COMMIT');
+      await writeAuditLog(req, 'EMPLOYEE_CREATE', 'employee', employeeId, { username, branch_id });
+      publishRealtime('employee.created', { id: employeeId, user_id: userId, username, full_name, phone, position, branch_id: branch_id || null }, branch_id || null);
+      return res.status(201).json({ id: employeeId, user_id: userId, username, full_name, phone, position, branch_id });
+    } finally {
+      client.release();
+    }
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'unique_violation', detail: err.detail || err.message });
     if (err.code === '22P02') return res.status(400).json({ error: 'invalid_input', detail: err.detail || err.message });
@@ -1595,7 +1612,7 @@ app.post('/stocktakes/:id/approve', authenticate, requirePermission('INVENTORY_M
 app.get('/reports/revenue', authenticate, requirePermission('REPORT_VIEW'), async (req, res) => {
   const { branch_id, from, to, group_by = 'day' } = req.query || {};
   const params = [];
-  const filters = ['payment_status = \"PAID\"'];
+  const filters = ["payment_status = 'PAID'"];
   if (branch_id) {
     if (!(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
     params.push(branch_id);
