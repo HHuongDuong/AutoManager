@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
+  Platform,
   ActivityIndicator
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,7 +16,8 @@ import { BluetoothManager, BluetoothEscposPrinter } from 'react-native-thermal-r
 const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
 export default function App() {
-  const [apiBase, setApiBase] = useState('http://localhost:3000');
+  const defaultApiBase = Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+  const [apiBase, setApiBase] = useState(defaultApiBase);
   const [printerTarget, setPrinterTarget] = useState('');
   const [bluetoothDevices, setBluetoothDevices] = useState([]);
   const [bluetoothConnected, setBluetoothConnected] = useState(false);
@@ -44,9 +46,16 @@ export default function App() {
   const [showPayment, setShowPayment] = useState(false);
   const [cashReceived, setCashReceived] = useState('0');
   const [payNow, setPayNow] = useState(true);
+  const [activeModule, setActiveModule] = useState('order');
+  const [showTablePicker, setShowTablePicker] = useState(false);
 
   const total = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
   const changeDue = Math.max(0, Number(cashReceived || 0) - total);
+  const tableNameMap = useMemo(() => tables.reduce((acc, table) => {
+    acc[table.id] = table.name || table.id;
+    return acc;
+  }, {}), [tables]);
+  const availableTables = useMemo(() => tables.filter(table => !table.status || table.status === 'AVAILABLE'), [tables]);
   const branchNameMap = useMemo(() => branches.reduce((acc, branch) => {
     acc[branch.id] = branch.name || branch.code || branch.id;
     return acc;
@@ -92,11 +101,19 @@ export default function App() {
       const savedEmployee = await AsyncStorage.getItem('employeeId');
       const savedQueue = await AsyncStorage.getItem('orderQueue');
       const savedPrinterTarget = await AsyncStorage.getItem('printerTarget');
+      const savedBranches = await AsyncStorage.getItem('branches');
       if (savedBase) setApiBase(savedBase);
       if (savedToken) setToken(savedToken);
       if (savedBranch) setBranchId(savedBranch);
       if (savedEmployee) setEmployeeId(savedEmployee);
       if (savedPrinterTarget) setPrinterTarget(savedPrinterTarget);
+      if (savedBranches) {
+        try {
+          setBranches(JSON.parse(savedBranches) || []);
+        } catch {
+          setBranches([]);
+        }
+      }
       if (savedQueue) {
         try {
           setOrderQueue(JSON.parse(savedQueue));
@@ -168,11 +185,33 @@ export default function App() {
         if (!res.ok) throw new Error('fetch_failed');
         const data = await res.json();
         setBranches(data || []);
+        await AsyncStorage.setItem('branches', JSON.stringify(data || []));
       } catch (err) {
         setBranches([]);
       }
     };
     fetchBranches();
+  }, [apiBase, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const fetchMe = async () => {
+      try {
+        const res = await fetch(`${apiBase}/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('me_failed');
+        const data = await res.json();
+        const empId = data?.employee?.id || '';
+        if (empId) {
+          setEmployeeId(empId);
+          await AsyncStorage.setItem('employeeId', empId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchMe();
   }, [apiBase, token]);
 
   useEffect(() => {
@@ -212,11 +251,11 @@ export default function App() {
   }, [apiBase, branchId, token]);
 
   useEffect(() => {
-    if (!token || !branchId) return;
+    if (!token) return;
     const fetchTables = async () => {
       try {
         const params = new URLSearchParams();
-        params.set('branch_id', branchId);
+        if (branchId) params.set('branch_id', branchId);
         const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -427,20 +466,47 @@ export default function App() {
 
   const handleLogin = async () => {
     setStatusMessage('');
+    let base = String(apiBase || '').trim().replace(/\/+$/, '');
+    if (Platform.OS === 'android' && /localhost|127\.0\.0\.1/.test(base)) {
+      base = base.replace(/localhost|127\.0\.0\.1/, '10.0.2.2');
+    }
+    if (!base) {
+      setStatusMessage('Cần API Base hợp lệ.');
+      return;
+    }
+    if (!loginForm.username || !loginForm.password) {
+      setStatusMessage('Cần username và password.');
+      return;
+    }
     try {
-      const res = await fetch(`${apiBase}/auth/login`, {
+      const res = await fetch(`${base}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm)
       });
-      if (!res.ok) throw new Error('login_failed');
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const data = await res.json();
+          detail = data?.error || data?.message || data?.detail || '';
+        } catch {
+          try {
+            detail = await res.text();
+          } catch {
+            detail = '';
+          }
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       await AsyncStorage.setItem('token', data.access_token);
-      await persistSetting('apiBase', apiBase);
+      await persistSetting('apiBase', base);
+      setApiBase(base);
       setToken(data.access_token);
       setShowLogin(false);
     } catch (err) {
-      setStatusMessage('Đăng nhập thất bại. Kiểm tra tài khoản hoặc API Base.');
+      console.warn('Login failed', err);
+      setStatusMessage(`Đăng nhập thất bại: ${err?.message || 'Kiểm tra tài khoản hoặc API Base.'}`);
     }
   };
 
@@ -656,291 +722,297 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Thiết lập nhanh</Text>
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>API Base</Text>
-                <TextInput
-                  style={styles.input}
-                  value={apiBase}
-                  onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
-                  placeholder="http://localhost:3000"
-                />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Chi nhánh</Text>
-                <Text style={styles.muted}>{branchNameMap[branchId] || branchId || 'Chưa chọn'}</Text>
-                {branches.length > 0 ? (
-                  <View style={styles.productList}>
-                    {branches.map(branch => (
-                      <TouchableOpacity
-                        key={branch.id}
-                        style={styles.productCard}
-                        onPress={() => {
-                          setBranchId(branch.id);
-                          persistSetting('branchId', branch.id);
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.productName}>{branch.name || branch.code || branch.id}</Text>
-                          <Text style={styles.productPrice}>{branch.address || branch.location || branch.id}</Text>
-                        </View>
-                        <Text style={styles.addBtn}>Chọn</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : (
-                  <TextInput
-                    style={styles.input}
-                    value={branchId}
-                    onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
-                    placeholder="branch_id"
-                  />
-                )}
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Máy in Bluetooth</Text>
-                <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
-                <View style={styles.row}>
-                  <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
-                    <Text style={styles.outlineText}>Quét thiết bị</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
-                    <Text style={styles.outlineText}>Ngắt kết nối</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
-                <TextInput
-                  style={styles.input}
-                  value={printerTarget}
-                  onChangeText={(value) => { setPrinterTarget(value); persistSetting('printerTarget', value); }}
-                  placeholder="00:11:22:33:44:55"
-                />
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
-                  <Text style={styles.primaryText}>Kết nối</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            {bluetoothDevices.length > 0 && (
-              <View style={styles.row}>
-                <View style={styles.field}>
-                  <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
-                  <View style={styles.productList}>
-                    {bluetoothDevices.map(device => (
-                      <TouchableOpacity
-                        key={device.address}
-                        style={styles.productCard}
-                        onPress={() => {
-                          setPrinterTarget(device.address);
-                          persistSetting('printerTarget', device.address);
-                          connectBluetooth(device.address);
-                        }}
-                      >
-                        <View>
-                          <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
-                          <Text style={styles.productPrice}>{device.address}</Text>
-                        </View>
-                        <Text style={styles.addBtn}>Kết nối</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            )}
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.outlineBtn} onPress={() => printReceipt(null, cart.map(item => ({
-                name: item.name,
-                quantity: item.quantity,
-                unit_price: item.price,
-                subtotal: item.price * item.quantity
-              })))}>
-                <Text style={styles.outlineText}>In thử</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Employee ID</Text>
-                <TextInput
-                  style={styles.input}
-                  value={employeeId}
-                  onChangeText={(value) => { setEmployeeId(value); persistSetting('employeeId', value); }}
-                  placeholder="employee_id"
-                />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Ca làm</Text>
-                <Text style={styles.muted}>Tự động theo giờ hiện tại</Text>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleCheckIn}>
-                <Text style={styles.primaryText}>Check-in</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.outlineBtn} onPress={handleCheckOut}>
-                <Text style={styles.outlineText}>Check-out</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.row}>
-              <TouchableOpacity style={styles.outlineBtn} onPress={processQueue}>
-                <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.muted}>Realtime: {wsStatus}</Text>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>POS Order</Text>
-            <View style={styles.segmented}>
-              {['DINE_IN', 'TAKE_AWAY', 'DELIVERY'].map(type => (
+          <View style={styles.moduleTabs}>
+            {[{ key: 'checkin', label: 'Check-in/out' }, { key: 'order', label: 'Bán hàng' }, { key: 'inventory', label: 'Nhập kho' }].map(item => (
               <TouchableOpacity
-                key={type}
-                style={[styles.segment, orderType === type && styles.segmentActive]}
-                onPress={() => setOrderType(type)}
+                key={item.key}
+                style={[styles.moduleTab, activeModule === item.key && styles.moduleTabActive]}
+                onPress={() => setActiveModule(item.key)}
               >
-                <Text style={orderType === type ? styles.segmentTextActive : styles.segmentText}>{type}</Text>
+                <Text style={activeModule === item.key ? styles.moduleTabTextActive : styles.moduleTabText}>{item.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
-          {orderType === 'DINE_IN' && (
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Chọn bàn</Text>
-                <TextInput
-                  style={styles.input}
-                  value={selectedTableId}
-                  onChangeText={setSelectedTableId}
-                  placeholder="table_id"
-                />
-                {tables.filter(table => table.status === 'AVAILABLE').length > 0 && (
-                  <View style={styles.productList}>
-                    {tables.filter(table => table.status === 'AVAILABLE').map(table => (
-                      <TouchableOpacity
-                        key={table.id}
-                        style={styles.productCard}
-                        onPress={() => setSelectedTableId(table.id)}
-                      >
-                        <View>
-                          <Text style={styles.productName}>{table.name}</Text>
-                          <Text style={styles.productPrice}>{table.status}</Text>
-                        </View>
-                        <Text style={styles.addBtn}>Chọn</Text>
+
+          {activeModule === 'checkin' && (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Thiết lập nhanh</Text>
+                <View style={styles.row}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>API Base</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={apiBase}
+                      onChangeText={(value) => { setApiBase(value); persistSetting('apiBase', value); }}
+                      placeholder="http://localhost:3000"
+                    />
+                  </View>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Chi nhánh</Text>
+                    <Text style={styles.muted}>{branchNameMap[branchId] || branchId || 'Chưa chọn'}</Text>
+                    {branches.length > 0 ? (
+                      <View style={styles.productList}>
+                        {branches.map(branch => (
+                          <TouchableOpacity
+                            key={branch.id}
+                            style={styles.productCard}
+                            onPress={() => {
+                              setBranchId(branch.id);
+                              persistSetting('branchId', branch.id);
+                            }}
+                          >
+                            <View>
+                              <Text style={styles.productName}>{branch.name || branch.code || branch.id}</Text>
+                              <Text style={styles.productPrice}>{branch.address || branch.location || branch.id}</Text>
+                            </View>
+                            <Text style={styles.addBtn}>Chọn</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : (
+                      <TextInput
+                        style={styles.input}
+                        value={branchId}
+                        onChangeText={(value) => { setBranchId(value); persistSetting('branchId', value); }}
+                        placeholder="branch_id"
+                      />
+                    )}
+                  </View>
+                </View>
+                <View style={styles.row}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Máy in Bluetooth</Text>
+                    <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
+                    <View style={styles.row}>
+                      <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
+                        <Text style={styles.outlineText}>Quét thiết bị</Text>
                       </TouchableOpacity>
-                    ))}
+                      <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
+                        <Text style={styles.outlineText}>Ngắt kết nối</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.row}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={printerTarget}
+                      onChangeText={(value) => { setPrinterTarget(value); persistSetting('printerTarget', value); }}
+                      placeholder="00:11:22:33:44:55"
+                    />
+                    <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
+                      <Text style={styles.primaryText}>Kết nối</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {bluetoothDevices.length > 0 && (
+                  <View style={styles.row}>
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
+                      <View style={styles.productList}>
+                        {bluetoothDevices.map(device => (
+                          <TouchableOpacity
+                            key={device.address}
+                            style={styles.productCard}
+                            onPress={() => {
+                              setPrinterTarget(device.address);
+                              persistSetting('printerTarget', device.address);
+                              connectBluetooth(device.address);
+                            }}
+                          >
+                            <View>
+                              <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
+                              <Text style={styles.productPrice}>{device.address}</Text>
+                            </View>
+                            <Text style={styles.addBtn}>Kết nối</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
                   </View>
                 )}
-              </View>
-            </View>
-          )}
-          <TextInput
-            style={styles.input}
-            placeholder="Tìm món..."
-            value={search}
-            onChangeText={setSearch}
-          />
-          {loadingProducts ? (
-            <ActivityIndicator />
-          ) : (
-            <View style={styles.productList}>
-              {products.map(product => (
-                <TouchableOpacity key={product.id || product.name} style={styles.productCard} onPress={() => addToCart(product)}>
-                  <View>
-                    <Text style={styles.productName}>{product.name}</Text>
-                    <Text style={styles.productPrice}>{formatVnd(product.price)}</Text>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.outlineBtn} onPress={() => printReceipt(null, cart.map(item => ({
+                    name: item.name,
+                    quantity: item.quantity,
+                    unit_price: item.price,
+                    subtotal: item.price * item.quantity
+                  })))}>
+                    <Text style={styles.outlineText}>In thử</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.row}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Employee ID</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={employeeId}
+                      onChangeText={(value) => { setEmployeeId(value); persistSetting('employeeId', value); }}
+                      placeholder="employee_id"
+                    />
                   </View>
-                  <Text style={styles.addBtn}>+ Thêm</Text>
-                </TouchableOpacity>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Ca làm</Text>
+                    <Text style={styles.muted}>Tự động theo giờ hiện tại</Text>
+                  </View>
+                </View>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.primaryBtn} onPress={handleCheckIn}>
+                    <Text style={styles.primaryText}>Check-in</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.outlineBtn} onPress={handleCheckOut}>
+                    <Text style={styles.outlineText}>Check-out</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.outlineBtn} onPress={processQueue}>
+                    <Text style={styles.outlineText}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.muted}>Realtime: {wsStatus}</Text>
+              </View>
+            </>
+          )}
+
+          {activeModule === 'order' && (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>POS Order</Text>
+                <View style={styles.segmented}>
+                  {['DINE_IN', 'TAKE_AWAY'].map(type => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.segment, orderType === type && styles.segmentActive]}
+                    onPress={() => setOrderType(type)}
+                  >
+                    <Text style={orderType === type ? styles.segmentTextActive : styles.segmentText}>{type}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {orderType === 'DINE_IN' && (
+                <View style={styles.row}>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Chọn bàn</Text>
+                    <TouchableOpacity style={styles.dropdownInput} onPress={() => setShowTablePicker(true)}>
+                      <Text style={styles.dropdownText}>{tableNameMap[selectedTableId] || 'Chưa chọn'}</Text>
+                      <Text style={styles.dropdownCaret}>▼</Text>
+                    </TouchableOpacity>
+                    {availableTables.length === 0 && (
+                      <Text style={styles.muted}>Chưa có bàn trống.</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+              <TextInput
+                style={styles.input}
+                placeholder="Tìm món..."
+                value={search}
+                onChangeText={setSearch}
+              />
+              {loadingProducts ? (
+                <ActivityIndicator />
+              ) : (
+                <View style={styles.productList}>
+                  {products.map(product => (
+                    <TouchableOpacity key={product.id || product.name} style={styles.productCard} onPress={() => addToCart(product)}>
+                      <View>
+                        <Text style={styles.productName}>{product.name}</Text>
+                        <Text style={styles.productPrice}>{formatVnd(product.price)}</Text>
+                      </View>
+                      <Text style={styles.addBtn}>+ Thêm</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Giỏ hàng</Text>
+              {cart.length === 0 && <Text style={styles.muted}>Chưa có món trong giỏ.</Text>}
+              {cart.map(item => (
+                <View key={item.id} style={styles.cartRow}>
+                  <View>
+                    <Text style={styles.productName}>{item.name}</Text>
+                    <Text style={styles.muted}>{formatVnd(item.price)}</Text>
+                  </View>
+                  <View style={styles.qtyRow}>
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQty(item.id, -1)}>
+                      <Text>-</Text>
+                    </TouchableOpacity>
+                    <Text>{item.quantity}</Text>
+                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQty(item.id, 1)}>
+                      <Text>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ))}
+              <View style={styles.totalRow}>
+                <Text>Tổng cộng</Text>
+                <Text style={styles.totalValue}>{formatVnd(total)}</Text>
+              </View>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowPayment(true)}>
+                <Text style={styles.primaryText}>Thanh toán</Text>
+              </TouchableOpacity>
+            </View>
+            </>
+          )}
+
+          {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
+
+          {activeModule === 'inventory' && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Nhập kho nguyên liệu</Text>
+              <Text style={styles.label}>Ingredient ID</Text>
+              <TextInput
+                style={styles.input}
+                value={inputForm.ingredient_id}
+                onChangeText={(value) => setInputForm({ ...inputForm, ingredient_id: value })}
+                placeholder="ingredient_id"
+              />
+              {ingredients.length > 0 && (
+                <Text style={styles.muted}>Gợi ý: {ingredients.slice(0, 3).map(i => i.name).join(', ')}</Text>
+              )}
+              <Text style={styles.label}>Số lượng</Text>
+              <TextInput
+                style={styles.input}
+                value={inputForm.quantity}
+                onChangeText={(value) => setInputForm({ ...inputForm, quantity: value })}
+                placeholder="quantity"
+                keyboardType="numeric"
+              />
+              <Text style={styles.label}>Đơn giá</Text>
+              <TextInput
+                style={styles.input}
+                value={inputForm.unit_cost}
+                onChangeText={(value) => setInputForm({ ...inputForm, unit_cost: value })}
+                placeholder="unit_cost"
+                keyboardType="numeric"
+              />
+              <Text style={styles.label}>Lý do</Text>
+              <TextInput
+                style={styles.input}
+                value={inputForm.reason}
+                onChangeText={(value) => setInputForm({ ...inputForm, reason: value })}
+                placeholder="reason"
+              />
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleCreateInput}>
+                <Text style={styles.primaryText}>Tạo phiếu nhập</Text>
+              </TouchableOpacity>
+              {inventoryInputs.slice(0, 5).map(input => (
+                <View key={input.id} style={styles.cartRow}>
+                  <View>
+                    <Text style={styles.productName}>{input.ingredient_id}</Text>
+                    <Text style={styles.muted}>{input.quantity} • {formatVnd(input.unit_cost || 0)}</Text>
+                  </View>
+                  <Text style={styles.totalValue}>{formatVnd(input.total_cost || 0)}</Text>
+                </View>
+              ))}
+              {inventoryInputs.length === 0 && <Text style={styles.muted}>Chưa có phiếu nhập kho.</Text>}
             </View>
           )}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Giỏ hàng</Text>
-          {cart.length === 0 && <Text style={styles.muted}>Chưa có món trong giỏ.</Text>}
-          {cart.map(item => (
-            <View key={item.id} style={styles.cartRow}>
-              <View>
-                <Text style={styles.productName}>{item.name}</Text>
-                <Text style={styles.muted}>{formatVnd(item.price)}</Text>
-              </View>
-              <View style={styles.qtyRow}>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQty(item.id, -1)}>
-                  <Text>-</Text>
-                </TouchableOpacity>
-                <Text>{item.quantity}</Text>
-                <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQty(item.id, 1)}>
-                  <Text>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-          <View style={styles.totalRow}>
-            <Text>Tổng cộng</Text>
-            <Text style={styles.totalValue}>{formatVnd(total)}</Text>
-          </View>
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowPayment(true)}>
-            <Text style={styles.primaryText}>Thanh toán</Text>
-          </TouchableOpacity>
-        </View>
-
-        {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Nhập kho nguyên liệu</Text>
-          <Text style={styles.label}>Ingredient ID</Text>
-          <TextInput
-            style={styles.input}
-            value={inputForm.ingredient_id}
-            onChangeText={(value) => setInputForm({ ...inputForm, ingredient_id: value })}
-            placeholder="ingredient_id"
-          />
-          {ingredients.length > 0 && (
-            <Text style={styles.muted}>Gợi ý: {ingredients.slice(0, 3).map(i => i.name).join(', ')}</Text>
-          )}
-          <Text style={styles.label}>Số lượng</Text>
-          <TextInput
-            style={styles.input}
-            value={inputForm.quantity}
-            onChangeText={(value) => setInputForm({ ...inputForm, quantity: value })}
-            placeholder="quantity"
-            keyboardType="numeric"
-          />
-          <Text style={styles.label}>Đơn giá</Text>
-          <TextInput
-            style={styles.input}
-            value={inputForm.unit_cost}
-            onChangeText={(value) => setInputForm({ ...inputForm, unit_cost: value })}
-            placeholder="unit_cost"
-            keyboardType="numeric"
-          />
-          <Text style={styles.label}>Lý do</Text>
-          <TextInput
-            style={styles.input}
-            value={inputForm.reason}
-            onChangeText={(value) => setInputForm({ ...inputForm, reason: value })}
-            placeholder="reason"
-          />
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleCreateInput}>
-            <Text style={styles.primaryText}>Tạo phiếu nhập</Text>
-          </TouchableOpacity>
-          {inventoryInputs.slice(0, 5).map(input => (
-            <View key={input.id} style={styles.cartRow}>
-              <View>
-                <Text style={styles.productName}>{input.ingredient_id}</Text>
-                <Text style={styles.muted}>{input.quantity} • {formatVnd(input.unit_cost || 0)}</Text>
-              </View>
-              <Text style={styles.totalValue}>{formatVnd(input.total_cost || 0)}</Text>
-            </View>
-          ))}
-          {inventoryInputs.length === 0 && <Text style={styles.muted}>Chưa có phiếu nhập kho.</Text>}
-        </View>
         </ScrollView>
       ) : (
         <View style={styles.loginOnly}>
@@ -976,6 +1048,40 @@ export default function App() {
             <TouchableOpacity style={styles.primaryBtn} onPress={handleCreateOrder}>
               <Text style={styles.primaryText}>Xác nhận</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showTablePicker} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.cardTitle}>Chọn bàn</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {availableTables.map(table => (
+                <TouchableOpacity
+                  key={table.id}
+                  style={styles.productCard}
+                  onPress={() => {
+                    setSelectedTableId(table.id);
+                    setShowTablePicker(false);
+                  }}
+                >
+                  <View>
+                    <Text style={styles.productName}>{table.name}</Text>
+                    <Text style={styles.productPrice}>{table.status}</Text>
+                  </View>
+                  <Text style={styles.addBtn}>Chọn</Text>
+                </TouchableOpacity>
+              ))}
+              {availableTables.length === 0 && (
+                <Text style={styles.muted}>Chưa có bàn trống.</Text>
+              )}
+            </ScrollView>
+            <View style={styles.row}>
+              <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowTablePicker(false)}>
+                <Text style={styles.outlineText}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1077,6 +1183,7 @@ export default function App() {
                 <Text style={styles.primaryText}>Đăng nhập</Text>
               </TouchableOpacity>
             </View>
+            {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
           </View>
         </View>
       </Modal>
@@ -1087,7 +1194,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a'
+    backgroundColor: '#f5f7fb'
   },
   loginOnly: {
     flex: 1,
@@ -1107,31 +1214,50 @@ const styles = StyleSheet.create({
   brand: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#e2e8f0'
+    color: '#0f172a'
   },
   card: {
-    backgroundColor: '#111827',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
-    gap: 12
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#e2e8f0'
+    color: '#0f172a'
   },
   label: {
     fontSize: 12,
-    color: '#94a3b8'
+    color: '#64748b'
   },
   input: {
-    backgroundColor: '#0b1220',
+    backgroundColor: '#ffffff',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#e2e8f0',
+    color: '#0f172a',
     borderWidth: 1,
-    borderColor: '#1f2937'
+    borderColor: '#e2e8f0'
+  },
+  dropdownInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  dropdownText: {
+    color: '#0f172a'
+  },
+  dropdownCaret: {
+    color: '#64748b'
   },
   row: {
     flexDirection: 'row',
@@ -1142,36 +1268,64 @@ const styles = StyleSheet.create({
     gap: 6
   },
   primaryBtn: {
-    backgroundColor: '#22c55e',
+    backgroundColor: '#2563eb',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     flex: 1
   },
   primaryText: {
-    color: '#052e16',
+    color: '#ffffff',
     fontWeight: '700'
   },
   outlineBtn: {
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e2e8f0',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     flex: 1
   },
   outlineText: {
-    color: '#e2e8f0'
+    color: '#0f172a'
   },
   ghostBtn: {
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e2e8f0',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
   },
   ghostText: {
-    color: '#e2e8f0'
+    color: '#0f172a'
+  },
+  moduleTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+    flexWrap: 'wrap'
+  },
+  moduleTab: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#ffffff'
+  },
+  moduleTabActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8'
+  },
+  moduleTabText: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  moduleTabTextActive: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700'
   },
   segmented: {
     flexDirection: 'row',
@@ -1180,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e2e8f0',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8
@@ -1190,11 +1344,11 @@ const styles = StyleSheet.create({
     borderColor: '#1d4ed8'
   },
   segmentText: {
-    color: '#e2e8f0',
+    color: '#0f172a',
     fontSize: 12
   },
   segmentTextActive: {
-    color: '#e2e8f0',
+    color: '#ffffff',
     fontSize: 12,
     fontWeight: '700'
   },
@@ -1205,22 +1359,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#0b1220',
+    backgroundColor: '#ffffff',
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1f2937'
+    borderColor: '#e2e8f0'
   },
   productName: {
-    color: '#e2e8f0',
+    color: '#0f172a',
     fontWeight: '600'
   },
   productPrice: {
-    color: '#94a3b8',
+    color: '#64748b',
     fontSize: 12
   },
   addBtn: {
-    color: '#38bdf8',
+    color: '#2563eb',
     fontWeight: '600'
   },
   cartRow: {
@@ -1236,42 +1390,44 @@ const styles = StyleSheet.create({
   },
   qtyBtn: {
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e2e8f0',
     width: 28,
     height: 28,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0b1220'
+    backgroundColor: '#ffffff'
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#1f2937',
+    borderTopColor: '#e2e8f0',
     paddingTop: 10
   },
   totalValue: {
-    color: '#22c55e',
+    color: '#2563eb',
     fontWeight: '700'
   },
   muted: {
-    color: '#94a3b8'
+    color: '#64748b'
   },
   status: {
-    color: '#38bdf8',
+    color: '#2563eb',
     textAlign: 'center'
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
     justifyContent: 'center',
     padding: 20
   },
   modalCard: {
-    backgroundColor: '#111827',
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 20,
-    gap: 12
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   }
 });

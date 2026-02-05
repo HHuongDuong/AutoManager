@@ -1069,6 +1069,23 @@ export default function App() {
     }
   };
 
+  const handleDeleteInventoryCategory = async (categoryIdValue) => {
+    const confirmed = window.confirm('Xoá phân loại kho này?');
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${apiBase}/inventory/categories/${categoryIdValue}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('category_delete_failed');
+      setInventoryCategories(prev => prev.filter(cat => cat.id !== categoryIdValue));
+      setIngredients(prev => prev.map(item => item.category_id === categoryIdValue ? { ...item, category_id: null } : item));
+      setStatusMessage('Đã xoá phân loại kho.');
+    } catch (err) {
+      setStatusMessage('Không thể xoá phân loại kho.');
+    }
+  };
+
   const handleUpdateIngredientCategory = async (ingredientId, categoryIdValue) => {
     try {
       const res = await fetch(`${apiBase}/ingredients/${ingredientId}`, {
@@ -1109,6 +1126,24 @@ export default function App() {
       setStatusMessage('Đã tạo nhóm sản phẩm.');
     } catch (err) {
       setStatusMessage('Không thể tạo nhóm sản phẩm.');
+    }
+  };
+
+  const handleDeleteCategory = async (categoryIdValue) => {
+    const confirmed = window.confirm('Xoá nhóm sản phẩm này?');
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${apiBase}/product-categories/${categoryIdValue}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('category_delete_failed');
+      setCategories(prev => prev.filter(cat => cat.id !== categoryIdValue));
+      setProducts(prev => prev.map(item => item.category_id === categoryIdValue ? { ...item, category_id: null } : item));
+      if (categoryId === categoryIdValue) setCategoryId('');
+      setStatusMessage('Đã xoá nhóm sản phẩm.');
+    } catch (err) {
+      setStatusMessage('Không thể xoá nhóm sản phẩm.');
     }
   };
 
@@ -1462,7 +1497,10 @@ export default function App() {
                       <h4>{cat.name}</h4>
                       <p>{cat.id}</p>
                     </div>
-                    <strong>Nhóm</strong>
+                    <div className="row-actions">
+                      <strong>Nhóm</strong>
+                      <button className="btn ghost" onClick={() => handleDeleteCategory(cat.id)}>Xoá</button>
+                    </div>
                   </div>
                 ))}
                 {categories.length === 0 && <div className="empty">Chưa có nhóm sản phẩm.</div>}
@@ -1612,7 +1650,10 @@ export default function App() {
                       <h4>{cat.name}</h4>
                       <p>{cat.id}</p>
                     </div>
-                    <strong>Nhóm</strong>
+                    <div className="row-actions">
+                      <strong>Nhóm</strong>
+                      <button className="btn ghost" onClick={() => handleDeleteInventoryCategory(cat.id)}>Xoá</button>
+                    </div>
                   </div>
                 ))}
                 {inventoryCategories.length === 0 && <div className="empty">Chưa có phân loại kho.</div>}
