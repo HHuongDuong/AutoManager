@@ -706,7 +706,7 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), requireBra
       [orderId, branch_id, client_id || null, created_by || null, order_type, table_id || null, total, metadata || null]
     );
     if (order_type === 'DINE_IN' && table_id) {
-      await client.query('UPDATE tables SET status = \"OCCUPIED\" WHERE id = $1', [table_id]);
+      await client.query("UPDATE tables SET status = 'OCCUPIED' WHERE id = $1", [table_id]);
     }
 
     for (const item of items) {
@@ -730,7 +730,7 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), requireBra
 
     if (idempotencyKey) {
       await client.query(
-        'INSERT INTO idempotency_keys (id, key, user_id, order_id, expires_at) VALUES ($1, $2, $3, $4, now() + interval \"1 day\")',
+        "INSERT INTO idempotency_keys (id, key, user_id, order_id, expires_at) VALUES ($1, $2, $3, $4, now() + interval '1 day')",
         [randomUUID(), idempotencyKey, req.user.sub, orderId]
       );
     }
@@ -746,6 +746,14 @@ app.post('/orders', authenticate, requirePermission('ORDERS_CREATE'), requireBra
     return res.status(201).json(order);
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('order_create_failed', {
+      message: err?.message,
+      code: err?.code,
+      detail: err?.detail,
+      constraint: err?.constraint,
+      table: err?.table,
+      column: err?.column
+    });
     return res.status(500).json({ error: 'order_create_failed', detail: err.message });
   } finally {
     client.release();
@@ -775,7 +783,7 @@ app.delete('/orders/:id', authenticate, requirePermission('ORDERS_UPDATE'), requ
   if (order.order_status === 'CANCELLED') return res.status(409).json({ error: 'already_cancelled' });
   await db.query('UPDATE orders SET order_status = $2, updated_at = now() WHERE id = $1', [req.params.id, 'CANCELLED']);
   if (order.table_id) {
-    await db.query('UPDATE tables SET status = "AVAILABLE" WHERE id = $1', [order.table_id]);
+    await db.query("UPDATE tables SET status = 'AVAILABLE' WHERE id = $1", [order.table_id]);
   }
   await writeAuditLog(req, 'ORDER_CANCEL', 'order', req.params.id, { reason });
   publishRealtime('order.cancelled', { id: req.params.id, reason }, order.branch_id);
@@ -875,7 +883,7 @@ app.post('/orders/:id/payments', authenticate, requirePermission('ORDERS_PAY'), 
     const paid = Number(paySumRes.rows[0].paid || 0);
     const total = Number(totalRes.rows[0].total_amount || 0);
     const status = paid >= total ? 'PAID' : 'PARTIAL';
-    await client.query('UPDATE orders SET payment_status = $2, updated_at = now(), order_status = CASE WHEN $2 = \"PAID\" THEN \"PAID\" ELSE order_status END WHERE id = $1', [req.params.id, status]);
+    await client.query("UPDATE orders SET payment_status = $2, updated_at = now(), order_status = CASE WHEN $2 = 'PAID' THEN 'PAID' ELSE order_status END WHERE id = $1", [req.params.id, status]);
     await writeAuditLog(req, 'ORDER_PAY', 'order', req.params.id, { amount });
     await client.query('COMMIT');
     return res.status(201).json({ id: payId, order_id: req.params.id, paid, total, payment_status: status });
@@ -891,9 +899,9 @@ app.post('/orders/:id/close', authenticate, requirePermission('ORDERS_UPDATE'), 
   const orderRes = await db.query('SELECT payment_status, table_id FROM orders WHERE id = $1', [req.params.id]);
   if (orderRes.rows.length === 0) return res.status(404).json({ error: 'not_found' });
   if (orderRes.rows[0].payment_status !== 'PAID') return res.status(409).json({ error: 'payment_required' });
-  await db.query('UPDATE orders SET order_status = \"CLOSED\", updated_at = now() WHERE id = $1', [req.params.id]);
+  await db.query("UPDATE orders SET order_status = 'CLOSED', updated_at = now() WHERE id = $1", [req.params.id]);
   if (orderRes.rows[0].table_id) {
-    await db.query('UPDATE tables SET status = \"AVAILABLE\" WHERE id = $1', [orderRes.rows[0].table_id]);
+    await db.query("UPDATE tables SET status = 'AVAILABLE' WHERE id = $1", [orderRes.rows[0].table_id]);
   }
   await writeAuditLog(req, 'ORDER_CLOSE', 'order', req.params.id, {});
   const order = await getOrderById(req.params.id);
@@ -1099,7 +1107,7 @@ app.delete('/product-categories/:id', authenticate, requirePermission('PRODUCT_M
   }
 });
 
-app.get('/products', authenticate, requirePermission('PRODUCT_VIEW'), branchFilter(), async (req, res) => {
+app.get('/products', authenticate, requirePermission('PRODUCT_VIEW'), branchFilter({ column: 'p.branch_id' }), async (req, res) => {
   const { branch_id, category_id, q } = req.query || {};
   const params = [...(req.branchFilter?.params || [])];
   const filters = [];

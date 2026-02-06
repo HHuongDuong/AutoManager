@@ -488,7 +488,7 @@ export default function App() {
         let detail = '';
         try {
           const data = await res.json();
-          detail = data?.error || data?.message || data?.detail || '';
+          detail = data?.detail || data?.message || data?.error || '';
         } catch {
           try {
             detail = await res.text();
@@ -640,7 +640,20 @@ export default function App() {
         },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('order_failed');
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const data = await res.json();
+          detail = data?.error || data?.message || data?.detail || '';
+        } catch {
+          try {
+            detail = await res.text();
+          } catch {
+            detail = '';
+          }
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       if (payNow) {
         await printReceipt(data, payload.items);
@@ -651,24 +664,30 @@ export default function App() {
       setSelectedTableId('');
       setStatusMessage('Tạo đơn thành công.');
     } catch (err) {
-      const payload = {
-        branch_id: branchId,
-        order_type: orderType,
-        table_id: orderType === 'DINE_IN' ? selectedTableId : null,
-        items: cart.map(item => ({
-          product_id: item.id.startsWith('p-') ? null : item.id,
-          name: item.name,
-          unit_price: item.price,
-          quantity: item.quantity
-        })),
-        payments: payNow ? [{ amount: total, payment_method: 'CASH' }] : []
-      };
-      await enqueueOrder(payload);
-      setCart([]);
-      setCashReceived('0');
-      setShowPayment(false);
-      setSelectedTableId('');
-      setStatusMessage('Đang offline: đơn đã vào hàng đợi.');
+      const message = String(err?.message || '').toLowerCase();
+      const isNetworkError = message.includes('network request failed') || message.includes('failed to fetch');
+      if (isNetworkError) {
+        const payload = {
+          branch_id: branchId,
+          order_type: orderType,
+          table_id: orderType === 'DINE_IN' ? selectedTableId : null,
+          items: cart.map(item => ({
+            product_id: item.id.startsWith('p-') ? null : item.id,
+            name: item.name,
+            unit_price: item.price,
+            quantity: item.quantity
+          })),
+          payments: payNow ? [{ amount: total, payment_method: 'CASH' }] : []
+        };
+        await enqueueOrder(payload);
+        setCart([]);
+        setCashReceived('0');
+        setShowPayment(false);
+        setSelectedTableId('');
+        setStatusMessage('Đang offline: đơn đã vào hàng đợi.');
+        return;
+      }
+      setStatusMessage(`Không thể tạo đơn: ${err?.message || 'Lỗi máy chủ.'}`);
     }
   };
 

@@ -316,6 +316,18 @@ export default function App() {
     });
   };
 
+  const assignUserBranchAccess = async (userId, nextBranchId) => {
+    if (!token || !userId || !nextBranchId) return;
+    await fetch(`${apiBase}/rbac/users/${userId}/branches`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ branch_id: nextBranchId })
+    });
+  };
+
   const handleSaveEmployee = async () => {
     if (!token) return;
     try {
@@ -335,6 +347,9 @@ export default function App() {
           })
         });
         if (!res.ok) throw new Error('update_failed');
+        if (employeeForm.branch_id) {
+          await assignUserBranchAccess(employeeForm.user_id, employeeForm.branch_id);
+        }
         setStatusMessage('Đã cập nhật nhân viên.');
       } else {
         if (!employeeForm.username || !employeeForm.password) {
@@ -354,6 +369,10 @@ export default function App() {
           })
         });
         if (!res.ok) throw new Error('create_failed');
+        const created = await res.json();
+        if (created?.user_id && employeeForm.branch_id) {
+          await assignUserBranchAccess(created.user_id, employeeForm.branch_id);
+        }
         setStatusMessage('Đã tạo nhân viên.');
       }
       resetEmployeeForm();
