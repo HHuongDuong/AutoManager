@@ -129,6 +129,10 @@ export default function App() {
     acc[branch.id] = branch.name || branch.code || branch.id;
     return acc;
   }, {}), [branches]);
+  const tableNameMap = useMemo(() => tables.reduce((acc, table) => {
+    acc[table.id] = table.name || table.id;
+    return acc;
+  }, {}), [tables]);
 
   const loadPrinters = async () => {
     if (!window?.electron?.printers?.list) return;
@@ -188,7 +192,14 @@ export default function App() {
       const res = await fetch(`${apiBase}/products?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('fetch_failed');
+      if (!res.ok) {
+        if (res.status === 403) {
+          setStatusMessage('Không có quyền xem món theo chi nhánh. Vui lòng chọn chi nhánh khác.');
+          setBranchId('');
+          localStorage.setItem('branchId', '');
+        }
+        throw new Error('fetch_failed');
+      }
       const data = await res.json();
       setProducts(data);
     } catch (err) {
@@ -235,20 +246,31 @@ export default function App() {
       if (!res.ok) throw new Error('fetch_failed');
       const data = await res.json();
       setBranches(data || []);
+      if (!branchId && data?.length === 1) {
+        setBranchId(data[0].id);
+        localStorage.setItem('branchId', data[0].id);
+      }
     } catch (err) {
       setBranches([]);
     }
   };
 
   const refreshTables = async () => {
-    if (!token || !branchId) return;
+    if (!token) return;
     try {
       const params = new URLSearchParams();
-      params.set('branch_id', branchId);
+      if (branchId) params.set('branch_id', branchId);
       const res = await fetch(`${apiBase}/tables?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('fetch_failed');
+      if (!res.ok) {
+        if (res.status === 403) {
+          setStatusMessage('Không có quyền xem bàn cho chi nhánh này. Vui lòng chọn chi nhánh khác.');
+          setBranchId('');
+          localStorage.setItem('branchId', '');
+        }
+        throw new Error('fetch_failed');
+      }
       const data = await res.json();
       setTables(data || []);
     } catch (err) {
@@ -260,7 +282,21 @@ export default function App() {
     if (!token) return;
     fetch(`${apiBase}/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.ok ? res.json() : null)
-      .then(data => setUser(data))
+      .then(data => {
+        setUser(data);
+        const allowed = Array.isArray(data?.branches) ? data.branches : [];
+        if (allowed.length) {
+          if (!branchId || !allowed.includes(branchId)) {
+            setBranchId(allowed[0]);
+            localStorage.setItem('branchId', allowed[0]);
+          }
+          return;
+        }
+        if (!branchId && data?.employee?.branch_id) {
+          setBranchId(data.employee.branch_id);
+          localStorage.setItem('branchId', data.employee.branch_id);
+        }
+      })
       .catch(() => setUser(null));
   }, [apiBase, token]);
 
@@ -648,49 +684,6 @@ export default function App() {
     }
   };
 
-  const handleSaveOrder = async () => {
-    if (cart.length === 0) return;
-    if (currentOrderId) {
-      setStatusMessage('Phiếu đã được lưu.');
-      return;
-    }
-    setStatusMessage('Đang lưu phiếu...');
-    const payload = {
-      branch_id: branchId,
-      order_type: orderType,
-      items: cart.map(item => ({
-        product_id: item.product_id || (item.id.startsWith('p-') ? null : item.id),
-        name: item.name,
-        unit_price: item.price,
-        quantity: item.quantity
-      }))
-    };
-    if (!isOnline) {
-      enqueueOrder(payload);
-      clearOrder();
-      setStatusMessage('Đang offline: phiếu đã vào hàng đợi.');
-      return;
-    }
-    try {
-      const res = await fetch(`${apiBase}/orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('order_failed');
-      const data = await res.json();
-      setLastOrder(data);
-      clearOrder();
-      setStatusMessage(`Đã lưu phiếu: ${data.id}`);
-      fetchOpenOrders();
-    } catch (err) {
-      setStatusMessage('Không thể lưu phiếu.');
-    }
-  };
-
   const handleCancelOrder = async (orderId) => {
     const reason = prompt('Nhập lý do xóa phiếu');
     if (!reason) return;
@@ -796,18 +789,29 @@ export default function App() {
           <main className="layout">
             <section className="menu-panel">
               <div className="search-row">
-                <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                  <option value="">Tất cả nhóm</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Tìm món, SKU..."
                 />
                 <button className="btn ghost" onClick={() => setSearch('')}>Xoá</button>
+              </div>
+              <div className="segmented">
+                <button
+                  className={categoryId ? 'btn ghost' : 'btn primary'}
+                  onClick={() => setCategoryId('')}
+                >
+                  Tất cả nhóm
+                </button>
+                {categories.map(cat => (
+                  <button
+                    key={cat.id}
+                    className={categoryId === cat.id ? 'btn primary' : 'btn ghost'}
+                    onClick={() => setCategoryId(cat.id)}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
               </div>
               <div className="menu-grid">
                 {loadingProducts && <div className="card">Đang tải món...</div>}
@@ -830,6 +834,13 @@ export default function App() {
               <div className="cart-header">
                 <h2>Hoá đơn</h2>
                 <button className="btn ghost" onClick={clearOrder}>Tạo mới</button>
+              </div>
+              <div className="form-row">
+                <label>Loại đơn</label>
+                <select value={orderType} onChange={(e) => { setOrderType(e.target.value); persistSettings(); }}>
+                  <option value="DINE_IN">DINE_IN</option>
+                  <option value="TAKE_AWAY">TAKE_AWAY</option>
+                </select>
               </div>
               {orderType === 'DINE_IN' && (
                 <div className="form-row">
@@ -884,7 +895,6 @@ export default function App() {
             <button className="btn ghost" onClick={processQueue}>Đồng bộ ({orderQueue.filter(i => i.status !== 'synced').length})</button>
             <button className="btn ghost" onClick={() => setShowInputModal(true)}>Nhập kho</button>
             <button className="btn ghost" onClick={handlePrintLast}>In hóa đơn</button>
-            <button className="btn ghost" onClick={handleSaveOrder} disabled={!cart.length || !!currentOrderId}>Lưu phiếu</button>
             <button className="btn primary" onClick={() => setShowPayment(true)} disabled={!cart.length}>Thanh toán</button>
           </div>
           {statusMessage && <div className="status">{statusMessage}</div>}
@@ -896,7 +906,8 @@ export default function App() {
               {openOrders.slice(0, 6).map(order => (
                 <div key={order.id} className="cart-item">
                   <div>
-                    <h4>{order.id}</h4>
+                    <h4>{tableNameMap[order.table_id] || order.table_id || 'Bàn chưa chọn'}</h4>
+                    <span>Đơn: {order.id}</span>
                     <span>{new Date(order.created_at).toLocaleString('vi-VN')}</span>
                   </div>
                   <button className="btn ghost" onClick={() => loadOrder(order.id)}>Mở</button>
@@ -932,13 +943,13 @@ export default function App() {
               <div className="methods">
                 <h4>Phương thức</h4>
                 <div className="method-grid">
-                  {['CASH', 'CARD', 'EWALLET', 'TRANSFER'].map(method => (
+                  {['CASH', 'TRANSFER'].map(method => (
                     <button
                       key={method}
                       className={paymentMethod === method ? 'active' : ''}
                       onClick={() => setPaymentMethod(method)}
                     >
-                      {method === 'CASH' ? 'Tiền mặt' : method === 'CARD' ? 'Thẻ' : method === 'EWALLET' ? 'Ví điện tử' : 'Chuyển khoản'}
+                      {method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'}
                     </button>
                   ))}
                 </div>
@@ -1069,14 +1080,6 @@ export default function App() {
                   ) : (
                     <input value={branchId} onChange={(e) => setBranchId(e.target.value)} onBlur={persistSettings} placeholder="branch_id" />
                   )}
-                </div>
-                <div className="form-row">
-                  <label>Loại đơn</label>
-                  <select value={orderType} onChange={(e) => { setOrderType(e.target.value); persistSettings(); }}>
-                    <option value="DINE_IN">DINE_IN</option>
-                    <option value="TAKE_AWAY">TAKE_AWAY</option>
-                    <option value="DELIVERY">DELIVERY</option>
-                  </select>
                 </div>
                 <div className="form-row">
                   <label>Máy in Bluetooth</label>

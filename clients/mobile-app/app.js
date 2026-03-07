@@ -37,6 +37,9 @@ export default function App() {
   const [shifts, setShifts] = useState([]);
   const [tables, setTables] = useState([]);
   const [selectedTableId, setSelectedTableId] = useState('');
+  const [openOrders, setOpenOrders] = useState([]);
+  const [currentOrderId, setCurrentOrderId] = useState('');
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [wsStatus, setWsStatus] = useState('disconnected');
   const [products, setProducts] = useState([]);
@@ -175,6 +178,57 @@ export default function App() {
     fetchIngredients();
   }, [apiBase, token]);
 
+  const fetchOpenOrders = async () => {
+    if (!token || !branchId) return;
+    setLoadingOrders(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('branch_id', branchId);
+      params.set('status', 'OPEN');
+      const res = await fetch(`${apiBase}/orders?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setOpenOrders(data || []);
+    } catch {
+      setOpenOrders([]);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const loadOrder = async (orderId) => {
+    if (!token || !orderId) return;
+    try {
+      const res = await fetch(`${apiBase}/orders/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('fetch_failed');
+      const data = await res.json();
+      setCurrentOrderId(data.id);
+      setCart((data.items || []).map(item => ({
+        id: item.product_id || `p-${item.id}`,
+        order_item_id: item.id,
+        name: item.name,
+        price: Number(item.unit_price || 0),
+        quantity: Number(item.quantity || 1)
+      })));
+      if (data.table_id) setSelectedTableId(data.table_id);
+      setPayNow(true);
+      setStatusMessage(`Đang sửa đơn ${data.id}`);
+    } catch {
+      setStatusMessage('Không thể tải đơn.');
+    }
+  };
+
+  const clearCurrentOrder = () => {
+    setCurrentOrderId('');
+    setCart([]);
+    setSelectedTableId('');
+    setCashReceived('0');
+  };
+
   useEffect(() => {
     if (!token) return;
     const fetchBranches = async () => {
@@ -248,6 +302,10 @@ export default function App() {
       }
     };
     fetchInputs();
+  }, [apiBase, branchId, token]);
+
+  useEffect(() => {
+    fetchOpenOrders();
   }, [apiBase, branchId, token]);
 
   useEffect(() => {
@@ -447,7 +505,37 @@ export default function App() {
     return () => clearInterval(timer);
   }, [apiBase, token, orderQueue]);
 
-  const addToCart = (product) => {
+  const addToCart = async (product) => {
+    if (currentOrderId) {
+      try {
+        const res = await fetch(`${apiBase}/orders/${currentOrderId}/items`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            product_id: product.id,
+            name: product.name,
+            quantity: 1,
+            unit_price: product.price
+          })
+        });
+        if (!res.ok) throw new Error('order_item_add_failed');
+        const data = await res.json();
+        setCart(prev => [...prev, {
+          id: product.id,
+          order_item_id: data.id,
+          name: product.name,
+          price: Number(product.price || 0),
+          quantity: 1
+        }]);
+        return;
+      } catch {
+        setStatusMessage('Không thể thêm món vào đơn.');
+        return;
+      }
+    }
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
@@ -457,11 +545,67 @@ export default function App() {
     });
   };
 
-  const updateQty = (id, delta) => {
+  const updateQty = async (id, delta) => {
+    if (currentOrderId) {
+      const target = cart.find(item => item.id === id);
+      if (!target) return;
+      const nextQty = target.quantity + delta;
+      if (!target.order_item_id) return;
+      try {
+        if (nextQty <= 0) {
+          const res = await fetch(`${apiBase}/orders/${currentOrderId}/items/${target.order_item_id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (!res.ok) throw new Error('delete_failed');
+          setCart(prev => prev.filter(item => item.id !== id));
+          return;
+        }
+        const res = await fetch(`${apiBase}/orders/${currentOrderId}/items/${target.order_item_id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ quantity: nextQty })
+        });
+        if (!res.ok) throw new Error('update_failed');
+        setCart(prev => prev.map(item => item.id === id ? { ...item, quantity: nextQty } : item));
+      } catch {
+        setStatusMessage('Không thể cập nhật số lượng.');
+      }
+      return;
+    }
     setCart(prev => prev
       .map(item => item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item)
       .filter(item => item.quantity > 0)
     );
+  };
+
+  const handlePayOrder = async () => {
+    if (!currentOrderId) return;
+    try {
+      const amount = total;
+      const res = await fetch(`${apiBase}/orders/${currentOrderId}/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount, payment_method: 'CASH' })
+      });
+      if (!res.ok) throw new Error('payment_failed');
+      await fetch(`${apiBase}/orders/${currentOrderId}/close`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      clearCurrentOrder();
+      setShowPayment(false);
+      setStatusMessage('Đã thanh toán đơn.');
+      fetchOpenOrders();
+    } catch (err) {
+      setStatusMessage(`Không thể thanh toán: ${err?.message || 'Lỗi máy chủ.'}`);
+    }
   };
 
   const handleLogin = async () => {
@@ -662,7 +806,8 @@ export default function App() {
       setCashReceived('0');
       setShowPayment(false);
       setSelectedTableId('');
-      setStatusMessage('Tạo đơn thành công.');
+      setStatusMessage(payNow ? 'Tạo đơn thành công.' : 'Đã lưu đơn thanh toán sau.');
+      fetchOpenOrders();
     } catch (err) {
       const message = String(err?.message || '').toLowerCase();
       const isNetworkError = message.includes('network request failed') || message.includes('failed to fetch');
@@ -949,7 +1094,17 @@ export default function App() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Giỏ hàng</Text>
+              <View style={styles.rowBetween}>
+                <Text style={styles.cardTitle}>Giỏ hàng</Text>
+                {currentOrderId ? (
+                  <TouchableOpacity style={styles.ghostBtn} onPress={clearCurrentOrder}>
+                    <Text style={styles.ghostText}>Hủy sửa</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {currentOrderId ? (
+                <Text style={styles.muted}>Đang sửa đơn: {currentOrderId}</Text>
+              ) : null}
               {cart.length === 0 && <Text style={styles.muted}>Chưa có món trong giỏ.</Text>}
               {cart.map(item => (
                 <View key={item.id} style={styles.cartRow}>
@@ -973,8 +1128,40 @@ export default function App() {
                 <Text style={styles.totalValue}>{formatVnd(total)}</Text>
               </View>
               <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowPayment(true)}>
-                <Text style={styles.primaryText}>Thanh toán</Text>
+                <Text style={styles.primaryText}>{currentOrderId ? 'Thanh toán đơn' : 'Thanh toán'}</Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.rowBetween}>
+                <Text style={styles.cardTitle}>Đơn chờ thanh toán</Text>
+                <TouchableOpacity style={styles.ghostBtn} onPress={fetchOpenOrders}>
+                  <Text style={styles.ghostText}>Làm mới</Text>
+                </TouchableOpacity>
+              </View>
+              {loadingOrders ? (
+                <ActivityIndicator />
+              ) : openOrders.length === 0 ? (
+                <Text style={styles.muted}>Chưa có đơn chờ thanh toán.</Text>
+              ) : (
+                openOrders.map(order => (
+                  <View key={order.id} style={styles.productCard}>
+                    <View>
+                      <Text style={styles.productName}>{tableNameMap[order.table_id] || order.table_id || 'Bàn chưa chọn'}</Text>
+                      <Text style={styles.productPrice}>Đơn: {order.id}</Text>
+                      <Text style={styles.productPrice}>Tổng: {formatVnd(order.total_amount || 0)}</Text>
+                    </View>
+                    <View style={styles.row}>
+                      <TouchableOpacity style={styles.ghostBtn} onPress={() => loadOrder(order.id)}>
+                        <Text style={styles.ghostText}>Mở</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.primaryBtnSmall} onPress={() => { loadOrder(order.id); setShowPayment(true); }}>
+                        <Text style={styles.primaryText}>Thu</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
             </>
           )}
@@ -1047,6 +1234,9 @@ export default function App() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.cardTitle}>Thanh toán</Text>
+            {currentOrderId ? (
+              <Text style={styles.muted}>Đơn: {currentOrderId}</Text>
+            ) : null}
             <Text style={styles.muted}>Tổng: {formatVnd(total)}</Text>
             <TextInput
               style={styles.input}
@@ -1057,14 +1247,20 @@ export default function App() {
             />
             <Text style={styles.muted}>Tiền thối: {formatVnd(changeDue)}</Text>
             <View style={styles.row}>
-              <TouchableOpacity style={styles.segment} onPress={() => setPayNow(v => !v)}>
-                <Text>{payNow ? 'Thanh toán ngay' : 'Thanh toán sau'}</Text>
-              </TouchableOpacity>
+              {!currentOrderId ? (
+                <TouchableOpacity style={styles.segment} onPress={() => setPayNow(v => !v)}>
+                  <Text>{payNow ? 'Thanh toán ngay' : 'Thanh toán sau'}</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.segment}>
+                  <Text>Thanh toán đơn</Text>
+                </View>
+              )}
               <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowPayment(false)}>
                 <Text style={styles.outlineText}>Đóng</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleCreateOrder}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={currentOrderId ? handlePayOrder : handleCreateOrder}>
               <Text style={styles.primaryText}>Xác nhận</Text>
             </TouchableOpacity>
           </View>
@@ -1282,6 +1478,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12
   },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12
+  },
   field: {
     flex: 1,
     gap: 6
@@ -1292,6 +1494,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     flex: 1
+  },
+  primaryBtnSmall: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center'
   },
   primaryText: {
     color: '#ffffff',
