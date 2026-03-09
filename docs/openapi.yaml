@@ -904,7 +904,7 @@ paths:
                     total_hours:
                       type: number
 
-    /shifts:
+  /shifts:
       get:
         summary: List shifts
         responses:
@@ -924,7 +924,7 @@ paths:
                     type: string
                   start_time:
                     type: string
-                  example: "08:00"
+                    example: "09:00"
                   end_time:
                     type: string
                     example: "16:00"
@@ -932,7 +932,7 @@ paths:
           '201':
             description: Shift created
 
-    /reports/revenue/export:
+  /reports/revenue/export:
       get:
         summary: Export revenue report
         parameters:
@@ -965,7 +965,7 @@ paths:
           '200':
             description: CSV or JSON export
 
-    /reports/inventory/export:
+  /reports/inventory/export:
       get:
         summary: Export inventory report
         parameters:
@@ -998,7 +998,7 @@ paths:
           '200':
             description: CSV or JSON export
 
-    /reports/attendance/export:
+  /reports/attendance/export:
       get:
         summary: Export attendance report
         parameters:
@@ -1026,7 +1026,7 @@ paths:
           '200':
             description: CSV or JSON export
 
-    /attendance/checkin:
+  /attendance/checkin:
       post:
         summary: Attendance check-in
         requestBody:
@@ -1047,7 +1047,7 @@ paths:
           '201':
             description: Checked in
 
-    /attendance/checkout:
+  /attendance/checkout:
       post:
         summary: Attendance check-out
         requestBody:
@@ -1065,7 +1065,7 @@ paths:
           '200':
             description: Checked out
 
-    /tables:
+  /tables:
       get:
         summary: List tables
         parameters:
@@ -1099,7 +1099,7 @@ paths:
           '201':
             description: Table created
 
-    /tables/{table_id}:
+  /tables/{table_id}:
       parameters:
         - name: table_id
           in: path
@@ -1124,7 +1124,7 @@ paths:
           '200':
             description: Table deleted
 
-    /tables/{table_id}/status:
+  /tables/{table_id}/status:
       patch:
         summary: Update table status
         parameters:
@@ -1149,7 +1149,7 @@ paths:
           '200':
             description: Updated
 
-    /audit-logs:
+  /audit-logs:
       get:
         summary: List audit logs
         parameters:
