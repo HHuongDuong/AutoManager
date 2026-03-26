@@ -362,6 +362,26 @@ export default function useDashboard() {
     }
   };
 
+  const handleDeleteRole = async (role) => {
+    if (!role?.id) return;
+    if (!window.confirm(`Xoa role ${role.name || role.id}?`)) return;
+    try {
+      await api.deleteRole(role.id);
+      setRoles(prev => prev.filter(item => item.id !== role.id));
+      if (selectedRoleId === role.id) {
+        setSelectedRoleId('');
+      }
+      setRolePermissions(prev => {
+        const next = { ...prev };
+        delete next[role.id];
+        return next;
+      });
+      setStatusMessage('Da xoa role.');
+    } catch {
+      setStatusMessage('Khong the xoa role.');
+    }
+  };
+
   const handleToggleRolePermission = async (permissionId, isChecked) => {
     if (!selectedRoleId) {
       setStatusMessage('Chon role truoc khi gan quyen.');
@@ -1105,6 +1125,7 @@ export default function useDashboard() {
     resetEmployeeForm,
     handleAssignRole,
     handleCreateRole,
+    handleDeleteRole,
     handleToggleRolePermission,
     handleEditBranch,
     handleSelectBranchForm,

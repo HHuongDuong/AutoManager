@@ -13,6 +13,11 @@ module.exports = function createRbacService(deps) {
     return result.rows[0];
   }
 
+  async function deleteRole(roleId) {
+    const result = await db.query('DELETE FROM roles WHERE id = $1', [roleId]);
+    return result.rowCount > 0;
+  }
+
   async function listPermissions() {
     const result = await db.query('SELECT id, code, description FROM permissions ORDER BY code');
     return result.rows;
@@ -79,6 +84,7 @@ module.exports = function createRbacService(deps) {
   return {
     listRoles,
     createRole,
+    deleteRole,
     listPermissions,
     createPermission,
     addRolePermission,

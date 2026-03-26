@@ -18,6 +18,7 @@ module.exports = function createRbacRouter(deps) {
 
   router.get('/rbac/roles', authenticate, requirePermission('RBAC_MANAGE'), controller.listRoles);
   router.post('/rbac/roles', authenticate, requirePermission('RBAC_MANAGE'), validateBody(rbacRoleCreateSchema), controller.createRole);
+  router.delete('/rbac/roles/:roleId', authenticate, requirePermission('RBAC_MANAGE'), controller.deleteRole);
 
   router.get('/rbac/permissions', authenticate, requirePermission('RBAC_MANAGE'), controller.listPermissions);
   router.post('/rbac/permissions', authenticate, requirePermission('RBAC_MANAGE'), validateBody(rbacPermissionCreateSchema), controller.createPermission);

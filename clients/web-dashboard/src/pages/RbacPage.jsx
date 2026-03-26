@@ -34,7 +34,7 @@ export default function RbacPage() {
                 <h4>{role.name}</h4>
                 <p>{role.id}</p>
               </div>
-              <strong>Role</strong>
+              <button className="btn ghost" onClick={() => actions.handleDeleteRole(role)}>Xoa</button>
             </div>
           ))}
           {state.roles.length === 0 && <div className="empty">Chua co role.</div>}

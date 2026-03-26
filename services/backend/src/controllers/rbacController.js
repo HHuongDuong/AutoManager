@@ -18,6 +18,14 @@ module.exports = function createRbacController(deps) {
     return res.status(201).json(result);
   }
 
+  async function deleteRole(req, res) {
+    const { roleId } = req.params;
+    const deleted = await rbacService.deleteRole(roleId);
+    if (!deleted) return res.status(404).json({ error: 'not_found' });
+    publishRealtime('rbac.role.deleted', { id: roleId }, null);
+    return res.json({ deleted: true });
+  }
+
   async function listPermissions(req, res) {
     const rows = await rbacService.listPermissions();
     return res.json(rows);
@@ -79,6 +87,7 @@ module.exports = function createRbacController(deps) {
   return {
     listRoles,
     createRole,
+    deleteRole,
     listPermissions,
     createPermission,
     addRolePermission,

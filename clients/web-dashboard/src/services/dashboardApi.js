@@ -92,6 +92,10 @@ export default function createDashboardApi(apiBase, token) {
       headers: jsonHeaders(),
       body: JSON.stringify(payload)
     }),
+    deleteRole: (roleId) => request(apiBase, `/rbac/roles/${roleId}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    }),
     assignRolePermission: (roleId, payload) => requestJson(apiBase, `/rbac/roles/${roleId}/permissions`, {
       method: 'POST',
       headers: jsonHeaders(),
