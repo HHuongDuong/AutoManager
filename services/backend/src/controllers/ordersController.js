@@ -4,7 +4,8 @@ module.exports = function createOrdersController(deps) {
   const {
     writeAuditLog,
     publishRealtime,
-    issueEInvoiceForOrder
+    issueEInvoiceForOrder,
+    getOrderBranchId
   } = deps;
 
   const ordersService = createOrdersService(deps);
@@ -91,6 +92,8 @@ module.exports = function createOrdersController(deps) {
     try {
       const result = await ordersService.addOrderItem(req.params.id, { product_id, name, quantity, unit_price });
       await writeAuditLog(req, 'ORDER_ITEM_ADD', 'order', req.params.id, { item_id: result.itemId });
+      const branchId = await getOrderBranchId(req.params.id);
+      publishRealtime('order.updated', { id: req.params.id, item_id: result.itemId, total_amount: result.total }, branchId);
       return res.status(201).json({ id: result.itemId, order_id: req.params.id, total_amount: result.total });
     } catch (err) {
       return res.status(500).json({ error: 'order_item_add_failed', detail: err.message });
@@ -103,6 +106,8 @@ module.exports = function createOrdersController(deps) {
       const result = await ordersService.updateOrderItem(req.params.id, req.params.itemId, { quantity, unit_price });
       if (!result) return res.status(404).json({ error: 'not_found' });
       await writeAuditLog(req, 'ORDER_ITEM_UPDATE', 'order', req.params.id, { item_id: req.params.itemId });
+      const branchId = await getOrderBranchId(req.params.id);
+      publishRealtime('order.updated', { id: req.params.id, item_id: req.params.itemId, total_amount: result.total }, branchId);
       return res.json({ id: req.params.itemId, order_id: req.params.id, total_amount: result.total });
     } catch (err) {
       return res.status(500).json({ error: 'order_item_update_failed', detail: err.message });
@@ -114,6 +119,8 @@ module.exports = function createOrdersController(deps) {
       const result = await ordersService.deleteOrderItem(req.params.id, req.params.itemId);
       if (!result) return res.status(404).json({ error: 'not_found' });
       await writeAuditLog(req, 'ORDER_ITEM_DELETE', 'order', req.params.id, { item_id: req.params.itemId });
+      const branchId = await getOrderBranchId(req.params.id);
+      publishRealtime('order.updated', { id: req.params.id, item_id: req.params.itemId, total_amount: result.total }, branchId);
       return res.json({ deleted: true, total_amount: result.total });
     } catch (err) {
       return res.status(500).json({ error: 'order_item_delete_failed', detail: err.message });
@@ -140,6 +147,7 @@ module.exports = function createOrdersController(deps) {
     await writeAuditLog(req, 'ORDER_CLOSE', 'order', req.params.id, {});
     const order = await ordersService.getOrderById(req.params.id);
     await issueEInvoiceForOrder(req, order);
+    if (order?.branch_id) publishRealtime('order.closed', { id: req.params.id }, order.branch_id);
     return res.json({ closed: true });
   }
 
