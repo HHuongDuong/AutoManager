@@ -14,7 +14,6 @@ export default function CartPanel({
   onSyncQueue,
   queuePendingCount,
   onShowInputModal,
-  onPrintLast,
   onShowPayment,
   statusMessage,
   openOrders,
@@ -28,7 +27,7 @@ export default function CartPanel({
   return (
     <aside className="cart-panel">
       <div className="cart-header">
-        <h2>Hoa don</h2>
+        <h2>Don hang</h2>
         <button className="btn ghost" onClick={onClearOrder}>Tao moi</button>
       </div>
       <div className="form-row">
@@ -87,7 +86,6 @@ export default function CartPanel({
       <div className="cart-actions">
         <button className="btn ghost" onClick={onSyncQueue}>Dong bo ({queuePendingCount})</button>
         <button className="btn ghost" onClick={onShowInputModal}>Nhap kho</button>
-        <button className="btn ghost" onClick={onPrintLast}>In hoa don</button>
         <button className="btn primary" onClick={onShowPayment} disabled={!cart.length}>Thanh toan</button>
       </div>
       {statusMessage && <div className="status">{statusMessage}</div>}

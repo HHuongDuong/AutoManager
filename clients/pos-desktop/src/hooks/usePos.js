@@ -1,24 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import createPosApi from '../services/posApi';
 
-const formatReceiptPayload = ({ order, branchId, cart, total, paymentMethod }) => {
-  if (order?.id) {
-    return { order_id: order.id };
-  }
-  return {
-    branch_id: branchId || null,
-    items: cart.map(item => ({
-      name: item.name,
-      quantity: item.quantity,
-      unit_price: item.price,
-      subtotal: item.price * item.quantity
-    })),
-    created_at: order?.created_at || new Date().toISOString(),
-    total_amount: order?.total_amount || total,
-    payments: order?.payments || [{ payment_method: paymentMethod }]
-  };
-};
-
 export default function usePos() {
   const [apiBase, setApiBase] = useState(localStorage.getItem('apiBase') || 'http://localhost:3000');
   const [branchId, setBranchId] = useState(localStorage.getItem('branchId') || '');
@@ -48,9 +30,6 @@ export default function usePos() {
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [showInputModal, setShowInputModal] = useState(false);
   const [wsStatus, setWsStatus] = useState('disconnected');
-  const [printers, setPrinters] = useState([]);
-  const [printerName, setPrinterName] = useState(localStorage.getItem('printerName') || '');
-  const [lastOrder, setLastOrder] = useState(null);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
@@ -139,34 +118,6 @@ export default function usePos() {
     return acc;
   }, {}), [tables]);
 
-  const loadPrinters = async () => {
-    if (!window?.electron?.printers?.list) return;
-    try {
-      const list = await window.electron.printers.list();
-      setPrinters(list || []);
-    } catch {
-      setPrinters([]);
-    }
-  };
-
-  useEffect(() => {
-    loadPrinters();
-  }, []);
-
-  const printReceipt = async (order) => {
-    if (!window?.electron?.printers?.print) {
-      setStatusMessage('Thieu ket noi may in Bluetooth.');
-      return;
-    }
-    try {
-      const payload = formatReceiptPayload({ order, branchId, cart, total, paymentMethod });
-      const data = await api.formatReceipt(payload);
-      await window.electron.printers.print({ html: data.html || '', deviceName: printerName || undefined });
-      setStatusMessage('Da gui lenh in hoa don.');
-    } catch {
-      setStatusMessage('Khong the in hoa don.');
-    }
-  };
 
   const refreshProducts = async () => {
     if (!token) return;
@@ -498,8 +449,6 @@ export default function usePos() {
         await api.createPayment(currentOrderId, { amount: total, payment_method: paymentMethod });
         await api.closeOrder(currentOrderId);
         const orderData = await api.getOrder(currentOrderId);
-        setLastOrder(orderData);
-        if (orderData) printReceipt(orderData);
         clearOrder();
         setShowPayment(false);
         setStatusMessage(`Da thanh toan: ${currentOrderId}`);
@@ -531,11 +480,9 @@ export default function usePos() {
     try {
       const idempotencyKey = crypto.randomUUID();
       const data = await api.createOrder(payload, idempotencyKey);
-      setLastOrder(data);
       if (payNow) {
         await api.createPayment(data.id, { amount: total, payment_method: paymentMethod });
         await api.closeOrder(data.id);
-        printReceipt(data);
         clearOrder();
         setShowPayment(false);
         setStatusMessage(`Da thanh toan: ${data.id}`);
@@ -606,16 +553,7 @@ export default function usePos() {
     localStorage.setItem('apiBase', apiBase);
     localStorage.setItem('branchId', branchId);
     localStorage.setItem('orderType', orderType);
-    localStorage.setItem('printerName', printerName);
     localStorage.setItem('categoryId', categoryId);
-  };
-
-  const handlePrintLast = () => {
-    if (!lastOrder && cart.length === 0) {
-      setStatusMessage('Chua co don de in.');
-      return;
-    }
-    printReceipt(lastOrder || null);
   };
 
   const state = {
@@ -640,9 +578,6 @@ export default function usePos() {
     inputForm,
     showInputModal,
     wsStatus,
-    printers,
-    printerName,
-    lastOrder,
     loadingProducts,
     search,
     cart,
@@ -675,7 +610,6 @@ export default function usePos() {
     setPasswordForm,
     setInputForm,
     setShowInputModal,
-    setPrinterName,
     setStatusMessage,
     setCart,
     setCurrentOrderId,
@@ -700,10 +634,7 @@ export default function usePos() {
     handleCancelOrder,
     handleCreateInput,
     handleLogout,
-    persistSettings,
-    handlePrintLast,
-    loadPrinters,
-    printReceipt
+    persistSettings
   };
 
   const derived = {

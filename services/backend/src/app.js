@@ -17,7 +17,6 @@ const createAccessService = require('./services/accessService');
 const createAuditService = require('./services/auditService');
 const createAttendanceUtils = require('./services/attendanceUtils');
 const { toCsv, sendXlsx } = require('./services/exportService');
-const createEInvoiceService = require('./services/einvoiceService');
 const createProductCacheService = require('./services/productCacheService');
 const createRealtimeService = require('./services/realtimeService');
 const createResourceLookupService = require('./services/resourceLookupService');
@@ -55,14 +54,12 @@ const createInventoryRouter = require('./routes/inventory');
 const createOrdersRouter = require('./routes/orders');
 const createTablesRouter = require('./routes/tables');
 const createProductsRouter = require('./routes/products');
-const createReceiptsRouter = require('./routes/receipts');
 const createReportsRouter = require('./routes/reports');
 const createAttendanceRouter = require('./routes/attendance');
 const createAiRouter = require('./routes/ai');
 // const { rabbitPing, publish } = require('./services/infra/rabbit');
 const rabbitPing = async () => ({ enabled: false, reason: 'disabled' });
 const publish = async () => {};
-const { issueInvoice } = require('./services/infra/einvoice');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 
@@ -113,13 +110,6 @@ const { getBranchLocation, haversineMeters, getShiftCheckStatus } = attendanceUt
 const { publishRealtime } = createRealtimeService({ server, jwtSecret: JWT_SECRET, getAllowedBranchIds });
 const { invalidateProductsCache } = createProductCacheService({ redisDelPattern });
 const { writeAuditLog } = createAuditService({ db });
-const { issueEInvoiceForOrder } = createEInvoiceService({
-  db,
-  randomUUID,
-  issueInvoice,
-  writeAuditLog,
-  publishRealtime
-});
 
 app.get('/health', async (req, res) => {
   const redis = await redisPing();
@@ -221,16 +211,7 @@ app.use('/', createOrdersRouter({
   orderPaymentSchema,
   writeAuditLog,
   publishRealtime,
-  issueEInvoiceForOrder,
   getOrderBranchId
-}));
-
-app.use('/', createReceiptsRouter({
-  db,
-  randomUUID,
-  authenticate,
-  requirePermission,
-  ensureBranchAccess
 }));
 
 app.use('/', createTablesRouter({

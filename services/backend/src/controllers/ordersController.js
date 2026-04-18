@@ -4,7 +4,6 @@ module.exports = function createOrdersController(deps) {
   const {
     writeAuditLog,
     publishRealtime,
-    issueEInvoiceForOrder,
     getOrderBranchId
   } = deps;
 
@@ -48,7 +47,6 @@ module.exports = function createOrdersController(deps) {
       });
       publishRealtime('order.created', { id: result.orderId, branch_id }, branch_id);
       const order = await ordersService.getOrderById(result.orderId);
-      if (result.paymentStatus === 'PAID') await issueEInvoiceForOrder(req, order);
       return res.status(201).json(order);
     } catch (err) {
       await writeAuditLog(req, 'ORDER_CREATE_FAILED', 'order', null, {
@@ -146,7 +144,6 @@ module.exports = function createOrdersController(deps) {
     if (result?.error === 'payment_required') return res.status(409).json({ error: 'payment_required' });
     await writeAuditLog(req, 'ORDER_CLOSE', 'order', req.params.id, {});
     const order = await ordersService.getOrderById(req.params.id);
-    await issueEInvoiceForOrder(req, order);
     if (order?.branch_id) publishRealtime('order.closed', { id: req.params.id }, order.branch_id);
     return res.json({ closed: true });
   }

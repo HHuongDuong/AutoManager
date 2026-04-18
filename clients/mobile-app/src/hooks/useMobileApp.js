@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BluetoothEscposPrinter, BluetoothManager } from 'react-native-thermal-receipt-printer';
 import { createMobileApi } from '../services/mobileApi';
 
 const defaultApiBase = Platform.OS === 'android'
@@ -10,9 +9,6 @@ const defaultApiBase = Platform.OS === 'android'
 
 export default function useMobileAppState() {
   const [apiBase, setApiBase] = useState(defaultApiBase);
-  const [printerTarget, setPrinterTarget] = useState('');
-  const [bluetoothDevices, setBluetoothDevices] = useState([]);
-  const [bluetoothConnected, setBluetoothConnected] = useState(false);
   const [token, setToken] = useState('');
   const [branchId, setBranchId] = useState('');
   const [branches, setBranches] = useState([]);
@@ -84,11 +80,6 @@ export default function useMobileAppState() {
     await persistSetting('branchId', value);
   };
 
-  const updatePrinterTarget = async (value) => {
-    setPrinterTarget(value);
-    await persistSetting('printerTarget', value);
-  };
-
   const updateEmployeeId = async (value) => {
     setEmployeeId(value);
     await persistSetting('employeeId', value);
@@ -133,13 +124,11 @@ export default function useMobileAppState() {
       const savedBranch = await AsyncStorage.getItem('branchId');
       const savedEmployee = await AsyncStorage.getItem('employeeId');
       const savedQueue = await AsyncStorage.getItem('orderQueue');
-      const savedPrinterTarget = await AsyncStorage.getItem('printerTarget');
       const savedBranches = await AsyncStorage.getItem('branches');
       if (savedBase) setApiBase(savedBase);
       if (savedToken) setToken(savedToken);
       if (savedBranch) setBranchId(savedBranch);
       if (savedEmployee) setEmployeeId(savedEmployee);
-      if (savedPrinterTarget) setPrinterTarget(savedPrinterTarget);
       if (savedBranches) {
         try {
           setBranches(JSON.parse(savedBranches) || []);
@@ -162,11 +151,6 @@ export default function useMobileAppState() {
   useEffect(() => {
     if (!token) setShowLogin(true);
   }, [token]);
-
-  useEffect(() => {
-    if (!printerTarget) return;
-    connectBluetooth(printerTarget);
-  }, [printerTarget]);
 
   useEffect(() => {
     if (!token) return;
@@ -351,69 +335,6 @@ export default function useMobileAppState() {
     return () => ws.close();
   }, [apiBase, branchId, token]);
 
-  const scanBluetooth = async () => {
-    try {
-      const devices = await BluetoothManager.enableBluetooth();
-      const list = (devices || []).map((device) => {
-        const parts = String(device).split('#');
-        return { name: parts[0] || 'Unknown', address: parts[1] || parts[0] };
-      });
-      setBluetoothDevices(list);
-    } catch {
-      setBluetoothDevices([]);
-      setStatusMessage('Không thể bật Bluetooth.');
-    }
-  };
-
-  const connectBluetooth = async (address) => {
-    if (!address) return;
-    try {
-      await BluetoothManager.connect(address);
-      setBluetoothConnected(true);
-      setStatusMessage('Đã kết nối máy in Bluetooth.');
-    } catch {
-      setBluetoothConnected(false);
-      setStatusMessage('Không thể kết nối máy in.');
-    }
-  };
-
-  const disconnectBluetooth = async () => {
-    try {
-      await BluetoothManager.disconnect();
-      setBluetoothConnected(false);
-      setStatusMessage('Đã ngắt kết nối máy in.');
-    } catch {
-      setStatusMessage('Không thể ngắt kết nối máy in.');
-    }
-  };
-
-  const printReceipt = async (order, itemsOverride) => {
-    try {
-      if (printerTarget && !bluetoothConnected) {
-        await connectBluetooth(printerTarget);
-      }
-      const payload = order?.id
-        ? { order_id: order.id }
-        : {
-          branch_id: branchId || null,
-          items: itemsOverride || order?.items || [],
-          created_at: order?.created_at || new Date().toISOString(),
-          total_amount: order?.total_amount || null,
-          payments: order?.payments || []
-        };
-      const res = await api.request({
-        path: '/receipts/format',
-        method: 'POST',
-        body: payload
-      });
-      if (!res.ok) throw new Error('receipt_failed');
-      const data = await res.json();
-      await BluetoothEscposPrinter.printText(data.text || '', { encoding: 'GBK' });
-      setStatusMessage('Đã gửi lệnh in hóa đơn.');
-    } catch {
-      setStatusMessage('Không thể in hóa đơn.');
-    }
-  };
 
   const makeId = () => `q_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
@@ -758,9 +679,6 @@ export default function useMobileAppState() {
         throw new Error(detail || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      if (payNow) {
-        await printReceipt(data, payload.items);
-      }
       setCart([]);
       setCashReceived('0');
       setShowPayment(false);
@@ -836,11 +754,6 @@ export default function useMobileAppState() {
     apiBase,
     setApiBase,
     updateApiBase,
-    printerTarget,
-    setPrinterTarget,
-    updatePrinterTarget,
-    bluetoothDevices,
-    bluetoothConnected,
     token,
     branchId,
     updateBranchId,
@@ -894,10 +807,6 @@ export default function useMobileAppState() {
     loadOrder,
     clearCurrentOrder,
     refreshInputs,
-    scanBluetooth,
-    connectBluetooth,
-    disconnectBluetooth,
-    printReceipt,
     enqueueOrder,
     processQueue,
     addToCart,

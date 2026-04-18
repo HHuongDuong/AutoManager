@@ -33,10 +33,6 @@ export default function App() {
     actions.persistSettings();
   };
 
-  const handlePrinterChange = (value) => {
-    actions.setPrinterName(value);
-    actions.persistSettings();
-  };
 
   return (
     <div className="pos-root">
@@ -76,7 +72,6 @@ export default function App() {
               onSyncQueue={actions.processQueue}
               queuePendingCount={derived.queuePendingCount}
               onShowInputModal={() => actions.setShowInputModal(true)}
-              onPrintLast={actions.handlePrintLast}
               onShowPayment={() => actions.setShowPayment(true)}
               statusMessage={state.statusMessage}
               openOrders={state.openOrders}
@@ -133,16 +128,11 @@ export default function App() {
         apiBase={state.apiBase}
         branches={state.branches}
         branchId={state.branchId}
-        printers={state.printers}
-        printerName={state.printerName}
         loginForm={state.loginForm}
         passwordForm={state.passwordForm}
         onClose={() => actions.setShowLogin(false)}
         onApiBaseChange={handleApiBaseChange}
         onBranchChange={handleBranchChange}
-        onPrinterChange={handlePrinterChange}
-        onRefreshPrinters={actions.loadPrinters}
-        onTestPrint={() => actions.printReceipt(state.lastOrder || null)}
         onLoginFormChange={actions.setLoginForm}
         onPasswordFormChange={actions.setPasswordForm}
         onLogout={actions.handleLogout}

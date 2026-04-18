@@ -4,16 +4,11 @@ export default function LoginModal({
   apiBase,
   branches,
   branchId,
-  printers,
-  printerName,
   loginForm,
   passwordForm,
   onClose,
   onApiBaseChange,
   onBranchChange,
-  onPrinterChange,
-  onRefreshPrinters,
-  onTestPrint,
   onLoginFormChange,
   onPasswordFormChange,
   onLogout,
@@ -54,23 +49,6 @@ export default function LoginModal({
               ) : (
                 <input value={branchId} onChange={(e) => onBranchChange(e.target.value)} onBlur={onPersistSettings} placeholder="branch_id" />
               )}
-            </div>
-            <div className="form-row">
-              <label>May in Bluetooth</label>
-              <select value={printerName} onChange={(e) => { onPrinterChange(e.target.value); onPersistSettings(); }}>
-                <option value="">May in mac dinh</option>
-                {printers.map((p) => (
-                  <option key={p.name} value={p.name}>{p.displayName || p.name}</option>
-                ))}
-              </select>
-              <small className="hint">Hay ghep doi may in Bluetooth trong Windows truoc khi chon o day.</small>
-            </div>
-            <div className="form-row">
-              <label>In thu</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className="btn ghost" type="button" onClick={onRefreshPrinters}>Lam moi may in</button>
-                <button className="btn ghost" type="button" onClick={onTestPrint}>In thu</button>
-              </div>
             </div>
             <div className="form-row">
               <label>Tai khoan</label>

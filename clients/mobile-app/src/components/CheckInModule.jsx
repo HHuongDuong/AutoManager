@@ -11,15 +11,6 @@ const CheckInModule = () => {
     branches,
     branchNameMap,
     updateBranchId,
-    bluetoothConnected,
-    bluetoothDevices,
-    scanBluetooth,
-    disconnectBluetooth,
-    printerTarget,
-    updatePrinterTarget,
-    connectBluetooth,
-    printReceipt,
-    cart,
     employeeId,
     updateEmployeeId,
     handleCheckIn,
@@ -70,72 +61,6 @@ const CheckInModule = () => {
             />
           )}
         </View>
-      </View>
-      <View style={styles.row}>
-        <View style={styles.field}>
-          <Text style={styles.label}>Máy in Bluetooth</Text>
-          <Text style={styles.muted}>Trạng thái: {bluetoothConnected ? 'Đã kết nối' : 'Chưa kết nối'}</Text>
-          <View style={styles.row}>
-            <TouchableOpacity style={styles.outlineBtn} onPress={scanBluetooth}>
-              <Text style={styles.outlineText}>Quét thiết bị</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.outlineBtn} onPress={disconnectBluetooth}>
-              <Text style={styles.outlineText}>Ngắt kết nối</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-      <View style={styles.row}>
-        <View style={styles.field}>
-          <Text style={styles.label}>Địa chỉ máy in Bluetooth</Text>
-          <TextInput
-            style={styles.input}
-            value={printerTarget}
-            onChangeText={updatePrinterTarget}
-            placeholder="00:11:22:33:44:55"
-          />
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => connectBluetooth(printerTarget)}>
-            <Text style={styles.primaryText}>Kết nối</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      {bluetoothDevices.length > 0 && (
-        <View style={styles.row}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Thiết bị đã ghép đôi</Text>
-            <View style={styles.productList}>
-              {bluetoothDevices.map(device => (
-                <TouchableOpacity
-                  key={device.address}
-                  style={styles.productCard}
-                  onPress={() => {
-                    updatePrinterTarget(device.address);
-                    connectBluetooth(device.address);
-                  }}
-                >
-                  <View>
-                    <Text style={styles.productName}>{device.name || 'Bluetooth Printer'}</Text>
-                    <Text style={styles.productPrice}>{device.address}</Text>
-                  </View>
-                  <Text style={styles.addBtn}>Kết nối</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      )}
-      <View style={styles.row}>
-        <TouchableOpacity
-          style={styles.outlineBtn}
-          onPress={() => printReceipt(null, cart.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            unit_price: item.price,
-            subtotal: item.price * item.quantity
-          })))}
-        >
-          <Text style={styles.outlineText}>In thử</Text>
-        </TouchableOpacity>
       </View>
       <View style={styles.row}>
         <View style={styles.field}>

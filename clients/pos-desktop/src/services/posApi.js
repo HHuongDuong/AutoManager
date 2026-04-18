@@ -94,11 +94,6 @@ export default function createPosApi(apiBase, token) {
       method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify(payload)
-    }),
-    formatReceipt: (payload) => requestJson(apiBase, '/receipts/format', {
-      method: 'POST',
-      headers: jsonHeaders(),
-      body: JSON.stringify(payload)
     })
   };
 }
