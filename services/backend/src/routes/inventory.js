@@ -33,6 +33,7 @@ module.exports = function createInventoryRouter(deps) {
   router.delete('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE'), controller.deleteIngredient);
 
   router.get('/inventory/inputs', authenticate, requirePermission('INVENTORY_VIEW'), branchFilter(), controller.listInputs);
+  router.post('/inventory/ai-reorder', authenticate, requirePermission('INVENTORY_VIEW'), requireBranchBody({ bodyKey: 'branch_id' }), controller.suggestReorderNextDay);
   router.post('/inventory/inputs', authenticate, requirePermission('INVENTORY_MANAGE'), validateBody(inventoryBatchSchema), requireBranchBody({ bodyKey: 'branch_id' }), controller.createInputs);
 
   router.get('/inventory/transactions', authenticate, requirePermission('INVENTORY_VIEW'), branchFilter(), controller.listTransactions);

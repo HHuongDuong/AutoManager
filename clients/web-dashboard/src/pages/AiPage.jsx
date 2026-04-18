@@ -7,29 +7,40 @@ export default function AiPage() {
     <section className="grid">
       <div className="card">
         <div className="card-head">
-          <h3>AI goi y nhap kho</h3>
-          <button className="btn ghost" onClick={actions.handleSuggestAI}>Lay goi y</button>
+          <h3>AI du bao don hang theo ngay</h3>
+          <button className="btn ghost" onClick={actions.handleForecastAI}>Lay goi y</button>
         </div>
         <div className="list">
-          {state.aiSuggest.map(item => (
-            <div key={item.ingredient_id} className="list-item">
+          {state.aiForecast.map((value, idx) => (
+            <div key={`forecast-${idx + 1}`} className="list-item">
               <div>
-                <h4>{item.ingredient_id}</h4>
-                <p>Avg: {item.avg_daily} / Target: {item.target_stock}</p>
+                <h4>Du bao ngay +{idx + 1}</h4>
+                <p>Method: {state.aiForecastMeta.method} / Window: {state.aiForecastMeta.window}</p>
               </div>
-              <strong>{item.reorder_qty} don vi</strong>
+              <strong>{value} don</strong>
             </div>
           ))}
-          {state.aiSuggest.length === 0 && <div className="empty">Chua co goi y AI.</div>}
+          {state.aiForecast.length === 0 && <div className="empty">Chua co du bao theo ngay.</div>}
         </div>
       </div>
       <div className="card">
-        <h3>Goi y van hanh</h3>
-        <ul className="tips">
-          <li>Tang du tru nguyen lieu ban chay cuoi tuan.</li>
-          <li>Khuyen nghi toi uu staffing theo gio cao diem.</li>
-          <li>So sanh doanh thu theo chi nhanh de dieu chinh ton kho.</li>
-        </ul>
+        <div className="card-head">
+          <h3>Goi y nhap kho ngay mai</h3>
+          <button className="btn ghost" onClick={actions.handleInventoryAiReorder}>Lay goi y</button>
+        </div>
+        <div className="list">
+          {state.aiInventorySuggest.map((item) => (
+            <div key={item.ingredient_id} className="list-item">
+              <div>
+                <h4>{item.name || item.ingredient_id}</h4>
+                <p>Ton: {item.on_hand} / TB ngay: {item.avg_daily}</p>
+                {item.reason ? <p>{item.reason}</p> : null}
+              </div>
+              <strong>{item.reorder_qty} {item.unit || ''}</strong>
+            </div>
+          ))}
+          {state.aiInventorySuggest.length === 0 && <div className="empty">Chua co goi y nhap kho.</div>}
+        </div>
       </div>
     </section>
   );

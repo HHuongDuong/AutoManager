@@ -153,7 +153,12 @@ export default function createDashboardApi(apiBase, token) {
       headers: jsonHeaders(),
       body: JSON.stringify(payload)
     }),
-    suggestReorder: (payload) => requestJson(apiBase, '/ai/suggest-reorder', {
+    forecastAi: (payload) => requestJson(apiBase, '/ai/forecast', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(payload)
+    }),
+    inventoryAiReorder: (payload) => requestJson(apiBase, '/inventory/ai-reorder', {
       method: 'POST',
       headers: jsonHeaders(),
       body: JSON.stringify(payload)

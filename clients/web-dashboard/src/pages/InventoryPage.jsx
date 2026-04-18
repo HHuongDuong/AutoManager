@@ -168,7 +168,6 @@ export default function InventoryPage() {
       <div className="card">
         <div className="card-head">
           <h3>Giao dich kho gan day</h3>
-          <button className="btn ghost" onClick={actions.handleSuggestAI}>AI goi y nhap</button>
         </div>
         <div className="table">
           <div className="table-row head">
@@ -324,21 +323,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      <div className="card">
-        <h3>Goi y nhap kho</h3>
-        <div className="list">
-          {state.aiSuggest.map(item => (
-            <div key={item.ingredient_id} className="list-item">
-              <div>
-                <h4>{derived.ingredientMap.get(item.ingredient_id) || item.ingredient_id}</h4>
-                <p>Avg: {item.avg_daily} / Target: {item.target_stock}</p>
-              </div>
-              <strong>{item.reorder_qty} don vi</strong>
-            </div>
-          ))}
-          {state.aiSuggest.length === 0 && <div className="empty">Chua co goi y nhap kho.</div>}
-        </div>
-      </div>
     </section>
   );
 }

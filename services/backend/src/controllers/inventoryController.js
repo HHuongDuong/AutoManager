@@ -79,6 +79,20 @@ module.exports = function createInventoryController(deps) {
     return res.json(rows);
   }
 
+  async function suggestReorderNextDay(req, res) {
+    const { branch_id } = req.body || {};
+    console.log('[ai] inventory reorder request', { branch_id });
+    if (!branch_id) return res.status(400).json({ error: 'branch_required' });
+    const result = await inventoryService.suggestReorderNextDay({ branch_id });
+    if (result?.error === 'ai_not_configured') return res.status(503).json({ error: 'ai_not_configured' });
+    if (result?.error === 'ai_invalid_response') return res.status(502).json({ error: 'ai_invalid_response' });
+    if (result?.error === 'ai_provider_error') return res.status(502).json({ error: 'ai_provider_error', status: result.status || null });
+    if (result?.error === 'branch_required') return res.status(400).json({ error: 'branch_required' });
+    console.log('[ai] inventory reorder response', { branch_id, count: result.suggestions?.length || 0 });
+    await writeAuditLog(req, 'AI_INVENTORY_REORDER', 'inventory', null, { branch_id, count: result.suggestions?.length || 0 });
+    return res.json(result);
+  }
+
   async function createInputs(req, res) {
     const { branch_id, items = [], reason } = req.body || {};
     if (!branch_id || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'branch_items_required' });
@@ -192,6 +206,7 @@ module.exports = function createInventoryController(deps) {
     updateIngredient,
     deleteIngredient,
     listInputs,
+    suggestReorderNextDay,
     createInputs,
     listTransactions,
     createTransaction,

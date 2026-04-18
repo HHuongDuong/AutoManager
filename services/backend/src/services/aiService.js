@@ -1,43 +1,98 @@
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+
 module.exports = function createAiService() {
-  function forecast(payload) {
-    const { series = [], horizon = 7, method = 'moving_average', window = 7 } = payload;
-    const w = Math.max(1, Number(window || 7));
-    const n = Math.max(1, Number(horizon || 7));
-    const working = Array.isArray(series) ? [...series] : [];
-    const forecastData = [];
-
-    if (method === 'moving_average') {
-      for (let i = 0; i < n; i++) {
-        const slice = working.slice(Math.max(0, working.length - w));
-        const avg = slice.reduce((s, v) => s + Number(v || 0), 0) / slice.length;
-        forecastData.push(Number(avg.toFixed(2)));
-        working.push(avg);
-      }
-      return { method, horizon: n, window: w, forecast: forecastData };
-    }
-
-    return { error: 'unsupported_method' };
+  function getAiEndpoint() {
+    if (!GROQ_API_KEY) return null;
+    return 'https://api.groq.com/openai/v1/chat/completions';
   }
 
-  function suggestReorder(payload) {
+  function extractJson(text) {
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) return null;
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  async function callGroq(prompt) {
+    const endpoint = getAiEndpoint();
+    if (!endpoint) return { error: 'ai_not_configured' };
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [
+            { role: 'system', content: 'Return ONLY valid JSON with no extra text.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.2
+        })
+      });
+      if (!res.ok) {
+        let bodyText = '';
+        try {
+          bodyText = await res.text();
+        } catch {
+          bodyText = '';
+        }
+        console.log('[ai] groq error', { status: res.status, body: bodyText });
+        return { error: 'ai_provider_error', status: res.status };
+      }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content || '';
+      const json = extractJson(text);
+      if (!json) return { error: 'ai_invalid_response' };
+      return json;
+    } catch {
+      console.log('[ai] groq error', { message: 'request_failed' });
+      return { error: 'ai_provider_error' };
+    }
+  }
+
+  async function forecast(payload) {
+    if (!GROQ_API_KEY) return { error: 'ai_not_configured' };
+    const { series = [], horizon = 7, method = 'moving_average', window = 7 } = payload;
+    const prompt = [
+      'You are a forecasting service. Return ONLY valid JSON.',
+      'Task: Forecast the next values for the series.',
+      'Input JSON:',
+      JSON.stringify({ series, horizon, method, window }),
+      'Output JSON schema:',
+      '{"method":"moving_average","horizon":7,"window":7,"forecast":[1,2,3]}'
+    ].join('\n');
+    const result = await callGroq(prompt);
+    if (result?.error) return result;
+    return result;
+  }
+
+  async function suggestReorder(payload) {
+    if (!GROQ_API_KEY) return { error: 'ai_not_configured' };
     const { branch_id, items = [] } = payload;
-    const suggestions = items.map(i => {
-      const avg = (Array.isArray(i.series) && i.series.length)
-        ? i.series.reduce((s, v) => s + Number(v || 0), 0) / i.series.length
-        : 0;
-      const target = avg * 7;
-      const on_hand = Number(i.on_hand || 0);
-      const reorder_qty = Math.max(0, Math.round(target - on_hand));
-      return {
-        ingredient_id: i.ingredient_id,
-        on_hand,
-        avg_daily: Number(avg.toFixed(2)),
-        horizon_days: 7,
-        target_stock: Number(target.toFixed(2)),
-        reorder_qty
-      };
-    });
-    return { branch_id, suggestions };
+    const prompt = [
+      'You are a reorder suggestion service. Return ONLY valid JSON.',
+      'Task: For each item, compute reorder quantities based on series and on_hand.',
+      'Input JSON:',
+      JSON.stringify({ branch_id, items }),
+      'Output JSON schema:',
+      '{"branch_id":"uuid","suggestions":[{"ingredient_id":"id","on_hand":0,"avg_daily":0,"horizon_days":7,"target_stock":0,"reorder_qty":0}]}'
+    ].join('\n');
+    const result = await callGroq(prompt);
+    if (result?.error) return result;
+    return result;
   }
 
   return {

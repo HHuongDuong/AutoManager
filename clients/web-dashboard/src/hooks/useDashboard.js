@@ -50,7 +50,9 @@ export default function useDashboard() {
   const [newRoleName, setNewRoleName] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [rolePermissions, setRolePermissions] = useState({});
-  const [aiSuggest, setAiSuggest] = useState([]);
+  const [aiForecast, setAiForecast] = useState([]);
+  const [aiForecastMeta, setAiForecastMeta] = useState({ method: 'moving_average', horizon: 7, window: 7 });
+  const [aiInventorySuggest, setAiInventorySuggest] = useState([]);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [categoryId, setCategoryId] = useState('');
@@ -640,6 +642,7 @@ export default function useDashboard() {
   };
 
   const revenueSeries = useMemo(() => revenue.map(row => Number(row.revenue || 0)), [revenue]);
+  const ordersSeries = useMemo(() => revenue.map(row => Number(row.orders || 0)), [revenue]);
   const revenueChartData = useMemo(() => {
     return revenue.map((row, idx) => ({
       name: row.bucket ? new Date(row.bucket).toLocaleDateString('vi-VN') : `#${idx + 1}`,
@@ -647,24 +650,37 @@ export default function useDashboard() {
     }));
   }, [revenue]);
 
-  const handleSuggestAI = async () => {
+  const handleForecastAI = async () => {
+    if (!ordersSeries.length) {
+      setStatusMessage('Chua co du lieu don hang theo ngay de du bao.');
+      return;
+    }
+    const meta = { method: 'moving_average', horizon: 7, window: 7 };
+    setAiForecastMeta(meta);
+    try {
+      const payload = {
+        series: ordersSeries,
+        horizon: meta.horizon,
+        method: meta.method,
+        window: meta.window
+      };
+      const data = await api.forecastAi(payload);
+      setAiForecast(Array.isArray(data.forecast) ? data.forecast : []);
+    } catch {
+      setAiForecast([]);
+    }
+  };
+
+  const handleInventoryAiReorder = async () => {
     if (!branchId) {
       setStatusMessage('Can chon branch_id de goi y nhap kho.');
       return;
     }
     try {
-      const payload = {
-        branch_id: branchId,
-        items: inventoryAlerts.map(item => ({
-          ingredient_id: item.id,
-          on_hand: item.qty,
-          series: [5, 6, 4, 7, 5, 6, 6]
-        }))
-      };
-      const data = await api.suggestReorder(payload);
-      setAiSuggest(data.suggestions || []);
+      const data = await api.inventoryAiReorder({ branch_id: branchId });
+      setAiInventorySuggest(Array.isArray(data.suggestions) ? data.suggestions : []);
     } catch {
-      setAiSuggest([]);
+      setAiInventorySuggest([]);
     }
   };
 
@@ -1044,7 +1060,9 @@ export default function useDashboard() {
     roleSelections,
     newRoleName,
     selectedRoleId,
-    aiSuggest,
+    aiForecast,
+    aiForecastMeta,
+    aiInventorySuggest,
     categories,
     products,
     categoryId,
@@ -1113,7 +1131,8 @@ export default function useDashboard() {
     removeStocktakeItem,
     handleCreateStocktake,
     handleApproveStocktake,
-    handleSuggestAI,
+    handleForecastAI,
+    handleInventoryAiReorder,
     handleCreateInput,
     handleCreateIssue,
     handleCreateAdjustment,
@@ -1149,6 +1168,7 @@ export default function useDashboard() {
     totalRevenueToday,
     orderCount,
     revenueSeries,
+    ordersSeries,
     revenueChartData,
     categoryMap,
     branchNameMap,
