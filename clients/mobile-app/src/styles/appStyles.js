@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f7fb'
+    backgroundColor: '#f6f6f7'
   },
   loginOnly: {
     flex: 1,
@@ -23,7 +23,7 @@ export const styles = StyleSheet.create({
   brand: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0f172a'
+    color: '#1f2124'
   },
   card: {
     backgroundColor: '#ffffff',
@@ -31,42 +31,42 @@ export const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e1e3e5'
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a'
+    color: '#1f2124'
   },
   label: {
     fontSize: 12,
-    color: '#64748b'
+    color: '#6d7175'
   },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f9fafb',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#0f172a',
+    color: '#1f2124',
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e1e3e5'
   },
   dropdownInput: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f9fafb',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e1e3e5'
   },
   dropdownText: {
-    color: '#0f172a'
+    color: '#1f2124'
   },
   dropdownCaret: {
-    color: '#64748b'
+    color: '#6d7175'
   },
   row: {
     flexDirection: 'row',
@@ -83,14 +83,14 @@ export const styles = StyleSheet.create({
     gap: 6
   },
   primaryBtn: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#005bd3',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     flex: 1
   },
   primaryBtnSmall: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#005bd3',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -102,24 +102,24 @@ export const styles = StyleSheet.create({
   },
   outlineBtn: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e1e3e5',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     flex: 1
   },
   outlineText: {
-    color: '#0f172a'
+    color: '#1f2124'
   },
   ghostBtn: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e1e3e5',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999
   },
   ghostText: {
-    color: '#0f172a'
+    color: '#1f2124'
   },
   moduleTabs: {
     flexDirection: 'row',
@@ -129,18 +129,18 @@ export const styles = StyleSheet.create({
   },
   moduleTab: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e1e3e5',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: '#ffffff'
   },
   moduleTabActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#1d4ed8'
+    backgroundColor: '#005bd3',
+    borderColor: '#0047aa'
   },
   moduleTabText: {
-    color: '#0f172a',
+    color: '#1f2124',
     fontSize: 12,
     fontWeight: '600'
   },
@@ -156,17 +156,17 @@ export const styles = StyleSheet.create({
   },
   segment: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e1e3e5',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   segmentActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#1d4ed8'
+    backgroundColor: '#005bd3',
+    borderColor: '#0047aa'
   },
   segmentText: {
-    color: '#0f172a',
+    color: '#1f2124',
     fontSize: 12
   },
   segmentTextActive: {
@@ -185,18 +185,18 @@ export const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e1e3e5'
   },
   productName: {
-    color: '#0f172a',
+    color: '#1f2124',
     fontWeight: '600'
   },
   productPrice: {
-    color: '#64748b',
+    color: '#6d7175',
     fontSize: 12
   },
   addBtn: {
-    color: '#2563eb',
+    color: '#005bd3',
     fontWeight: '600'
   },
   cartRow: {
@@ -212,7 +212,7 @@ export const styles = StyleSheet.create({
   },
   qtyBtn: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#e1e3e5',
     width: 28,
     height: 28,
     borderRadius: 8,
@@ -224,23 +224,23 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#e1e3e5',
     paddingTop: 10
   },
   totalValue: {
-    color: '#2563eb',
+    color: '#005bd3',
     fontWeight: '700'
   },
   muted: {
-    color: '#64748b'
+    color: '#6d7175'
   },
   status: {
-    color: '#2563eb',
+    color: '#005bd3',
     textAlign: 'center'
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: 'rgba(16, 24, 40, 0.35)',
     justifyContent: 'center',
     padding: 20
   },
@@ -250,6 +250,6 @@ export const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0'
+    borderColor: '#e1e3e5'
   }
 });
