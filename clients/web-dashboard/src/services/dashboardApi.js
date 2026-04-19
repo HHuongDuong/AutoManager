@@ -51,6 +51,7 @@ export default function createDashboardApi(apiBase, token) {
     getInventoryCategories: () => requestJson(apiBase, '/inventory/categories', { headers: authHeaders() }),
     getIngredients: () => requestJson(apiBase, '/ingredients', { headers: authHeaders() }),
     getStocktakes: (params) => requestJson(apiBase, `/stocktakes${buildQuery(params)}`, { headers: authHeaders() }),
+    getStocktakeItems: (stocktakeId) => requestJson(apiBase, `/stocktakes/${stocktakeId}/items`, { headers: authHeaders() }),
     getShifts: () => requestJson(apiBase, '/shifts', { headers: authHeaders() }),
     getBranches: () => requestJson(apiBase, '/branches', { headers: authHeaders() }),
     getTables: (params) => requestJson(apiBase, `/tables${buildQuery(params)}`, { headers: authHeaders() }),
@@ -195,6 +196,11 @@ export default function createDashboardApi(apiBase, token) {
     deleteInventoryCategory: (categoryId) => request(apiBase, `/inventory/categories/${categoryId}`, {
       method: 'DELETE',
       headers: authHeaders()
+    }),
+    createIngredient: (payload) => requestJson(apiBase, '/ingredients', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(payload)
     }),
     updateIngredient: (ingredientId, payload) => requestJson(apiBase, `/ingredients/${ingredientId}`, {
       method: 'PATCH',

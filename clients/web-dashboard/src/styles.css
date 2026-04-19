@@ -27,21 +27,13 @@
     opacity: 0;
     transform: translateY(8px);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-body {
-  background: linear-gradient(180deg, #fafbfc 0%, #f6f6f7 35%, #f1f2f4 100%);
-  color: var(--text);
 }
 
 .dashboard-root {
+  min-height: 100vh;
+  background: var(--bg);
   display: grid;
   grid-template-columns: 260px 1fr;
-  min-height: 100vh;
 }
 
 .sidebar {
@@ -52,6 +44,22 @@ body {
   flex-direction: column;
   gap: 24px;
   border-right: 1px solid var(--border);
+}
+
+.inventory-top {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.inventory-branch {
+  justify-content: center;
+}
+
+.inventory-branch .card-head {
+  font-size: 11px;
+  color: var(--muted);
 }
 
 .brand h2 {
@@ -187,6 +195,26 @@ body {
 
 .grid.employee-grid {
   grid-template-columns: repeat(2, minmax(320px, 1fr));
+}
+
+.grid.branch-top {
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 18px;
+}
+
+.grid.table-grid {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.grid.ingredient-grid {
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(320px, 2fr);
+  gap: 18px;
+}
+
+.grid.stock-grid {
+  grid-template-columns: repeat(3, minmax(300px, 1fr));
+  gap: 18px;
 }
 
 .grid .full-row {
@@ -326,6 +354,13 @@ body {
   flex: 1 1 240px;
 }
 
+.tab-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .pager {
   display: flex;
   align-items: center;
@@ -348,6 +383,10 @@ body {
   animation: surface-fade 0.35s ease both;
 }
 
+.table-row.branch-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .metrics article,
   .card,
@@ -364,6 +403,10 @@ body {
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
+.stocktake-items .table-row {
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+}
+
 .row-actions {
   display: flex;
   gap: 8px;
@@ -375,6 +418,25 @@ body {
   background: #f1f2f3;
   font-weight: 600;
   color: #1f2124;
+}
+
+.stocktake-detail {
+  border: 1px solid var(--border);
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stocktake-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .table-row strong {
@@ -550,6 +612,10 @@ body {
   .table-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .inventory-top {
+    grid-template-columns: 1fr;
   }
 
   .table-toolbar {

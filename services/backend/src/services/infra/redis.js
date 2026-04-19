@@ -7,7 +7,7 @@ function getRedis() {
   if (!redis) {
     redis = new Redis(process.env.REDIS_URL, { lazyConnect: true });
     redis.on('error', (err) => {
-      if (process.env.NODE_ENV !== 'test') {
+      if (process.env.REDIS_LOG_ERRORS === 'true' && process.env.NODE_ENV !== 'test') {
         console.warn('[redis] connection error:', err.message);
       }
     });

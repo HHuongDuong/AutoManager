@@ -19,9 +19,12 @@ export default function useDashboard() {
   const [inventoryInputs, setInventoryInputs] = useState([]);
   const [inventoryCategories, setInventoryCategories] = useState([]);
   const [ingredients, setIngredients] = useState([]);
+  const [ingredientForm, setIngredientForm] = useState({ name: '', unit: '', category_id: '' });
   const [stocktakes, setStocktakes] = useState([]);
   const [stocktakeItems, setStocktakeItems] = useState([]);
   const [stocktakeNote, setStocktakeNote] = useState('');
+  const [stocktakeItemsById, setStocktakeItemsById] = useState({});
+  const [stocktakeItemLoading, setStocktakeItemLoading] = useState({});
   const [selectedIngredient, setSelectedIngredient] = useState('');
   const [actualQty, setActualQty] = useState('');
   const [inventoryCategoryName, setInventoryCategoryName] = useState('');
@@ -160,6 +163,33 @@ export default function useDashboard() {
       setInventoryCategories([]);
       setIngredients([]);
       setStocktakes([]);
+    }
+  };
+
+  const resetIngredientForm = () => {
+    setIngredientForm({ name: '', unit: '', category_id: '' });
+  };
+
+  const handleCreateIngredient = async () => {
+    if (!ingredientForm.name.trim()) {
+      setStatusMessage('Can ten nguyen lieu.');
+      return;
+    }
+    try {
+      const data = await api.createIngredient({
+        name: ingredientForm.name.trim(),
+        unit: ingredientForm.unit?.trim() || null,
+        category_id: ingredientForm.category_id || null
+      });
+      setIngredients(prev => [...prev, data]);
+      resetIngredientForm();
+      setStatusMessage('Da tao nguyen lieu.');
+    } catch (err) {
+      if (err?.status === 409) {
+        setStatusMessage('Nguyen lieu da ton tai.');
+        return;
+      }
+      setStatusMessage('Khong the tao nguyen lieu.');
     }
   };
 
@@ -821,6 +851,19 @@ export default function useDashboard() {
     }
   };
 
+  const fetchStocktakeItems = async (stocktakeId) => {
+    if (!token || !stocktakeId) return;
+    setStocktakeItemLoading(prev => ({ ...prev, [stocktakeId]: true }));
+    try {
+      const items = await api.getStocktakeItems(stocktakeId);
+      setStocktakeItemsById(prev => ({ ...prev, [stocktakeId]: items }));
+    } catch {
+      setStocktakeItemsById(prev => ({ ...prev, [stocktakeId]: [] }));
+    } finally {
+      setStocktakeItemLoading(prev => ({ ...prev, [stocktakeId]: false }));
+    }
+  };
+
   const handleApproveStocktake = async (stocktakeId) => {
     try {
       await api.approveStocktake(stocktakeId);
@@ -1055,9 +1098,13 @@ export default function useDashboard() {
     inventoryInputs,
     inventoryCategories,
     ingredients,
+    ingredientForm,
+    ingredientForm,
     stocktakes,
     stocktakeItems,
     stocktakeNote,
+    stocktakeItemsById,
+    stocktakeItemLoading,
     selectedIngredient,
     actualQty,
     inventoryCategoryName,
@@ -1095,6 +1142,8 @@ export default function useDashboard() {
     fetchData,
     fetchMenuData,
     fetchInventoryMeta,
+    handleCreateIngredient,
+    resetIngredientForm,
     refreshEmployees,
     refreshShifts,
     refreshBranches,
@@ -1123,6 +1172,7 @@ export default function useDashboard() {
     setCategoryId,
     setProductSearch,
     setInventoryCategoryName,
+    setIngredientForm,
     setSelectedIngredient,
     setActualQty,
     setStocktakeNote,
@@ -1148,6 +1198,7 @@ export default function useDashboard() {
     removeStocktakeItem,
     handleCreateStocktake,
     handleApproveStocktake,
+    fetchStocktakeItems,
     handleForecastAI,
     handleInventoryAiReorder,
     handleCreateInput,

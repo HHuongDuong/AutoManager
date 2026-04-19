@@ -9,14 +9,31 @@ module.exports = function createAiService() {
 
   function extractJson(text) {
     if (!text) return null;
+    const trimmed = text.trim();
     try {
-      return JSON.parse(text);
+      return JSON.parse(trimmed);
     } catch {
-      const start = text.indexOf('{');
-      const end = text.lastIndexOf('}');
+      // Try fenced code block first.
+      const fenceStart = trimmed.indexOf('```');
+      if (fenceStart !== -1) {
+        const fenceEnd = trimmed.indexOf('```', fenceStart + 3);
+        if (fenceEnd !== -1) {
+          let fenced = trimmed.slice(fenceStart + 3, fenceEnd).trim();
+          if (fenced.startsWith('json')) {
+            fenced = fenced.slice(4).trim();
+          }
+          try {
+            return JSON.parse(fenced);
+          } catch {
+            // fall through to brace extraction
+          }
+        }
+      }
+      const start = trimmed.indexOf('{');
+      const end = trimmed.lastIndexOf('}');
       if (start === -1 || end === -1 || end <= start) return null;
       try {
-        return JSON.parse(text.slice(start, end + 1));
+        return JSON.parse(trimmed.slice(start, end + 1));
       } catch {
         return null;
       }
@@ -55,7 +72,10 @@ module.exports = function createAiService() {
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content || '';
       const json = extractJson(text);
-      if (!json) return { error: 'ai_invalid_response' };
+      if (!json) {
+        console.log('[ai] invalid response', { text });
+        return { error: 'ai_invalid_response' };
+      }
       return json;
     } catch {
       console.log('[ai] groq error', { message: 'request_failed' });

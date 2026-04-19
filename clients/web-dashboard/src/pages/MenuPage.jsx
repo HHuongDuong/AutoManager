@@ -5,6 +5,12 @@ import { useDashboardContext } from '../context/DashboardContext';
 export default function MenuPage() {
   const { state, actions, derived } = useDashboardContext();
 
+  const formatThousands = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  };
+
   useEffect(() => {
     if (!state.token) return;
     actions.fetchMenuData();
@@ -55,7 +61,13 @@ export default function MenuPage() {
           </div>
           <div className="form-row">
             <label>Giá</label>
-            <input value={state.productForm.price} onChange={(e) => actions.setProductForm({ ...state.productForm, price: e.target.value })} />
+            <input
+              value={formatThousands(state.productForm.price)}
+              onChange={(e) => actions.setProductForm({
+                ...state.productForm,
+                price: e.target.value.replace(/\D/g, '')
+              })}
+            />
           </div>
           <div className="form-row">
             <label>Nhóm</label>
