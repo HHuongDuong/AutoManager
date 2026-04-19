@@ -1,19 +1,15 @@
 export default function LoginModal({
   show,
   token,
-  apiBase,
   branches,
   branchId,
   loginForm,
-  passwordForm,
   statusMessage,
   onClose,
-  onApiBaseChange,
   onBranchChange,
   onLoginFormChange,
-  onPasswordFormChange,
   onLogout,
-  onChangePassword,
+  onOpenChangePassword,
   onLogin
 }) {
   if (!show) return null;
@@ -27,10 +23,6 @@ export default function LoginModal({
         </header>
         <div className="modal-body">
           <div className="form-grid">
-            <div className="form-row">
-              <label>API Base</label>
-              <input value={apiBase} onChange={(e) => onApiBaseChange(e.target.value)} />
-            </div>
             <div className="form-row">
               <label>Chi nhánh</label>
               <select value={branchId} onChange={(e) => onBranchChange(e.target.value)} disabled={!branches.length}>
@@ -49,22 +41,6 @@ export default function LoginModal({
               <label>Mật khẩu</label>
               <input type="password" value={loginForm.password} onChange={(e) => onLoginFormChange({ ...loginForm, password: e.target.value })} />
             </div>
-            {token && (
-              <>
-                <div className="form-row">
-                  <label>Mật khẩu cũ</label>
-                  <input type="password" value={passwordForm.old_password} onChange={(e) => onPasswordFormChange({ ...passwordForm, old_password: e.target.value })} />
-                </div>
-                <div className="form-row">
-                  <label>Mật khẩu mới</label>
-                  <input type="password" value={passwordForm.new_password} onChange={(e) => onPasswordFormChange({ ...passwordForm, new_password: e.target.value })} />
-                </div>
-                <div className="form-row">
-                  <label>Xác nhận mật khẩu mới</label>
-                  <input type="password" value={passwordForm.confirm_password} onChange={(e) => onPasswordFormChange({ ...passwordForm, confirm_password: e.target.value })} />
-                </div>
-              </>
-            )}
           </div>
           {statusMessage && <div className="status">{statusMessage}</div>}
         </div>
@@ -73,7 +49,7 @@ export default function LoginModal({
             <button className="btn ghost" onClick={onLogout}>Đăng xuất</button>
           )}
           {token && (
-            <button className="btn ghost" onClick={onChangePassword}>Đổi mật khẩu</button>
+            <button className="btn ghost" onClick={onOpenChangePassword}>Đổi mật khẩu</button>
           )}
           <button className="btn primary" onClick={onLogin}>Đăng nhập</button>
         </footer>

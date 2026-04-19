@@ -7,26 +7,26 @@ export default function AiPage() {
     <section className="grid">
       <div className="card">
         <div className="card-head">
-          <h3>AI du bao don hang theo ngay</h3>
-          <button className="btn ghost" onClick={actions.handleForecastAI}>Lay goi y</button>
+          <h3>AI dự báo đơn hàng theo ngày</h3>
+          <button className="btn ghost" onClick={actions.handleForecastAI}>Lấy gợi ý</button>
         </div>
         <div className="list">
           {state.aiForecast.map((value, idx) => (
             <div key={`forecast-${idx + 1}`} className="list-item">
               <div>
-                <h4>Du bao ngay +{idx + 1}</h4>
+                <h4>Dự báo ngày +{idx + 1}</h4>
                 <p>Method: {state.aiForecastMeta.method} / Window: {state.aiForecastMeta.window}</p>
               </div>
-              <strong>{value} don</strong>
+              <strong>{value} đơn</strong>
             </div>
           ))}
-          {state.aiForecast.length === 0 && <div className="empty">Chua co du bao theo ngay.</div>}
+          {state.aiForecast.length === 0 && <div className="empty">Chưa có dự báo theo ngày.</div>}
         </div>
       </div>
       <div className="card">
         <div className="card-head">
-          <h3>Goi y nhap kho ngay mai</h3>
-          <button className="btn ghost" onClick={actions.handleInventoryAiReorder}>Lay goi y</button>
+          <h3>Gợi ý nhập kho ngày mai</h3>
+          <button className="btn ghost" onClick={actions.handleInventoryAiReorder}>Lấy gợi ý</button>
         </div>
         <div className="list">
           {state.aiInventorySuggest.map((item) => (
@@ -39,7 +39,7 @@ export default function AiPage() {
               <strong>{item.reorder_qty} {item.unit || ''}</strong>
             </div>
           ))}
-          {state.aiInventorySuggest.length === 0 && <div className="empty">Chua co goi y nhap kho.</div>}
+          {state.aiInventorySuggest.length === 0 && <div className="empty">Chưa có gợi ý nhập kho.</div>}
         </div>
       </div>
     </section>

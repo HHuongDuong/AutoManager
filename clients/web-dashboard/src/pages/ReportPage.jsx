@@ -8,22 +8,22 @@ export default function ReportPage() {
     <section className="grid">
       <div className="card">
         <div className="form-row">
-          <label>Chi nhanh</label>
+          <label>Chi nhánh</label>
           <select value={state.branchId} onChange={(e) => actions.setBranchIdAndPersist(e.target.value)} disabled={!state.branches.length}>
-            <option value="">Tat ca chi nhanh</option>
+            <option value="">Tất cả chi nhánh</option>
             {state.branches.map(branch => (
               <option key={branch.id} value={branch.id}>{branch.name}</option>
             ))}
           </select>
-          {!state.branches.length && <small className="hint">Can tai danh sach chi nhanh truoc.</small>}
+          {!state.branches.length && <small className="hint">Cần tải danh sách chi nhánh trước.</small>}
         </div>
-        <h3>Tong hop doanh thu</h3>
-        <p>Tong doanh thu: {formatVnd(derived.revenueSeries.reduce((sum, v) => sum + v, 0))}</p>
-        <p>Don hang: {state.orders.length}</p>
+        <h3>Tổng hợp doanh thu</h3>
+        <p>Tổng doanh thu: {formatVnd(derived.revenueSeries.reduce((sum, v) => sum + v, 0))}</p>
+        <p>Đơn hàng: {state.orders.length}</p>
         <div className="actions">
-          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/revenue/export')}>Xuat doanh thu</button>
-          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/inventory/export')}>Xuat ton kho</button>
-          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/attendance/export')}>Xuat cham cong</button>
+          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/revenue/export')}>Xuất doanh thu</button>
+          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/inventory/export')}>Xuất tồn kho</button>
+          <button className="btn ghost" onClick={() => actions.downloadReport('/reports/attendance/export')}>Xuất chấm công</button>
         </div>
       </div>
       <div className="card">
@@ -38,7 +38,7 @@ export default function ReportPage() {
               <strong>{new Date(log.created_at).toLocaleDateString('vi-VN')}</strong>
             </div>
           ))}
-          {state.auditLogs.length === 0 && <div className="empty">Chua co audit log.</div>}
+          {state.auditLogs.length === 0 && <div className="empty">Chưa có audit log.</div>}
         </div>
       </div>
     </section>

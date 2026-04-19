@@ -8,8 +8,8 @@ export default function SalesPage() {
     <section className="grid single">
       <div className="card">
         <div className="card-head">
-          <h3>Danh sach don hang</h3>
-          <span>{state.orders.length} don</span>
+          <h3>Danh sách đơn hàng</h3>
+          <span>{state.orders.length} đơn</span>
         </div>
         <OrdersTable orders={state.orders} />
       </div>

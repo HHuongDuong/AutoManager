@@ -24,16 +24,16 @@ export default function BranchPage() {
     <section className="grid">
       <div className="card">
         <div className="card-head">
-          <h3>Danh sach chi nhanh</h3>
-          <button className="btn ghost" onClick={actions.refreshBranches}>Lam moi</button>
+          <h3>Danh sach chi nhánh</h3>
+          <button className="btn ghost" onClick={actions.refreshBranches}>Làm mới</button>
         </div>
         <div className="table">
           <div className="table-row head">
-            <span>Ten</span>
-            <span>Dia chi</span>
+            <span>Tên</span>
+            <span>Địa chỉ</span>
             <span>Lat</span>
             <span>Lng</span>
-            <span>Hanh dong</span>
+            <span>Hành động</span>
           </div>
           {state.branches.map(branch => (
             <div key={branch.id} className="table-row">
@@ -42,55 +42,55 @@ export default function BranchPage() {
               <span>{branch.latitude ?? '---'}</span>
               <span>{branch.longitude ?? '---'}</span>
               <span>
-                <button className="btn ghost" onClick={() => actions.handleEditBranch(branch)}>Sua</button>
-                <button className="btn danger" onClick={() => actions.handleDeleteBranch(branch)}>Xoa</button>
+                <button className="btn ghost" onClick={() => actions.handleEditBranch(branch)}>Sửa</button>
+                <button className="btn danger" onClick={() => actions.handleDeleteBranch(branch)}>Xóa</button>
               </span>
             </div>
           ))}
-          {state.branches.length === 0 && <div className="empty">Chua co chi nhanh.</div>}
+          {state.branches.length === 0 && <div className="empty">Chưa có chi nhánh.</div>}
         </div>
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h3>Thong tin chi nhanh</h3>
+          <h3>Thông tin chi nhánh</h3>
         </div>
         <div className="form-grid">
           <div className="form-row">
-            <label>Chi nhanh</label>
+            <label>Chi nhánh</label>
             <select value={state.branchForm.id} onChange={(e) => actions.handleSelectBranchForm(e.target.value)}>
-              <option value="">Chon chi nhanh</option>
+              <option value="">Chọn chi nhánh</option>
               {state.branches.map(branch => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </select>
           </div>
           <div className="form-row">
-            <label>Ten chi nhanh</label>
-            <input value={state.branchForm.name} onChange={(e) => actions.setBranchForm({ ...state.branchForm, name: e.target.value })} placeholder="Chi nhanh 1" />
+            <label>Tên chi nhánh</label>
+            <input value={state.branchForm.name} onChange={(e) => actions.setBranchForm({ ...state.branchForm, name: e.target.value })} placeholder="Chi nhánh 1" />
           </div>
           <div className="form-row">
-            <label>Dia chi</label>
-            <input value={state.branchForm.address} onChange={(e) => actions.setBranchForm({ ...state.branchForm, address: e.target.value })} placeholder="So nha, duong, quan" />
+            <label>Địa chỉ</label>
+            <input value={state.branchForm.address} onChange={(e) => actions.setBranchForm({ ...state.branchForm, address: e.target.value })} placeholder="Số nhà, đường, quận" />
           </div>
         </div>
         <div className="actions">
-          <button className="btn primary" onClick={actions.handleCreateBranch}>Tao moi</button>
-          <button className="btn ghost" onClick={actions.handleUpdateBranchInfo} disabled={!state.branchForm.id}>Cap nhat</button>
-          <button className="btn danger" onClick={() => actions.handleDeleteBranch(state.branchForm)} disabled={!state.branchForm.id}>Xoa</button>
-          <button className="btn ghost" onClick={actions.resetBranchForm}>Lam moi</button>
+          <button className="btn primary" onClick={actions.handleCreateBranch}>Tạo mới</button>
+          <button className="btn ghost" onClick={actions.handleUpdateBranchInfo} disabled={!state.branchForm.id}>Cập nhật</button>
+          <button className="btn danger" onClick={() => actions.handleDeleteBranch(state.branchForm)} disabled={!state.branchForm.id}>Xóa</button>
+          <button className="btn ghost" onClick={actions.resetBranchForm}>Làm mới</button>
         </div>
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h3>Cap nhat toa do chi nhanh</h3>
+          <h3>Cập nhật tọa độ chi nhánh</h3>
         </div>
         <div className="form-grid">
           <div className="form-row">
-            <label>Chi nhanh</label>
+            <label>Chi nhánh</label>
             <select value={state.branchForm.id} onChange={(e) => actions.handleSelectBranchForm(e.target.value)}>
-              <option value="">Chon chi nhanh</option>
+              <option value="">Chọn chi nhánh</option>
               {state.branches.map(branch => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
@@ -105,21 +105,21 @@ export default function BranchPage() {
             <input value={state.branchForm.longitude} onChange={(e) => actions.setBranchForm({ ...state.branchForm, longitude: e.target.value })} placeholder="106.123456" />
           </div>
         </div>
-        <button className="btn primary" onClick={actions.handleUpdateBranchLocation}>Luu toa do</button>
+        <button className="btn primary" onClick={actions.handleUpdateBranchLocation}>Lưu tọa độ</button>
       </div>
 
       <div className="card">
         <div className="card-head">
           <h3>Danh sach ban</h3>
-          <button className="btn ghost" onClick={() => actions.refreshTables(state.tableBranchId)}>Lam moi</button>
+          <button className="btn ghost" onClick={() => actions.refreshTables(state.tableBranchId)}>Làm mới</button>
         </div>
         <div className="form-row">
-          <label>Chi nhanh</label>
+          <label>Chi nhánh</label>
           <select value={state.tableBranchId} onChange={(e) => {
             actions.setTableBranchId(e.target.value);
             actions.setTableForm({ id: '', name: '', status: 'AVAILABLE' });
           }}>
-            <option value="">Chon chi nhanh</option>
+            <option value="">Chọn chi nhánh</option>
             {state.branches.map(branch => (
               <option key={branch.id} value={branch.id}>{branch.name}</option>
             ))}
@@ -127,35 +127,35 @@ export default function BranchPage() {
         </div>
         <div className="table">
           <div className="table-row head">
-            <span>Ten ban</span>
-            <span>Trang thai</span>
-            <span>Hanh dong</span>
+            <span>Tên bàn</span>
+            <span>Trạng thái</span>
+            <span>Hành động</span>
           </div>
           {state.tables.map(table => (
             <div key={table.id} className="table-row">
               <span>{table.name}</span>
               <span>{table.status}</span>
               <span>
-                <button className="btn ghost" onClick={() => actions.handleEditTable(table)}>Sua</button>
-                <button className="btn danger" onClick={() => actions.handleDeleteTable(table)}>Xoa</button>
+                <button className="btn ghost" onClick={() => actions.handleEditTable(table)}>Sửa</button>
+                <button className="btn danger" onClick={() => actions.handleDeleteTable(table)}>Xóa</button>
               </span>
             </div>
           ))}
-          {state.tables.length === 0 && <div className="empty">Chua co ban.</div>}
+          {state.tables.length === 0 && <div className="empty">Chưa có bàn.</div>}
         </div>
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h3>Tao/Cap nhat ban</h3>
+          <h3>Tạo/Cập nhật bàn</h3>
         </div>
         <div className="form-grid">
           <div className="form-row">
-            <label>Ten ban</label>
+            <label>Tên bàn</label>
             <input value={state.tableForm.name} onChange={(e) => actions.setTableForm({ ...state.tableForm, name: e.target.value })} placeholder="Ban 1" />
           </div>
           <div className="form-row">
-            <label>Trang thai</label>
+            <label>Trạng thái</label>
             <select value={state.tableForm.status} onChange={(e) => actions.setTableForm({ ...state.tableForm, status: e.target.value })}>
               <option value="AVAILABLE">AVAILABLE</option>
               <option value="OCCUPIED">OCCUPIED</option>
@@ -165,9 +165,9 @@ export default function BranchPage() {
           </div>
         </div>
         <div className="actions">
-          <button className="btn primary" onClick={actions.handleCreateTable}>Tao moi</button>
-          <button className="btn ghost" onClick={actions.handleUpdateTable} disabled={!state.tableForm.id}>Cap nhat</button>
-          <button className="btn ghost" onClick={() => actions.setTableForm({ id: '', name: '', status: 'AVAILABLE' })}>Lam moi</button>
+          <button className="btn primary" onClick={actions.handleCreateTable}>Tạo mới</button>
+          <button className="btn ghost" onClick={actions.handleUpdateTable} disabled={!state.tableForm.id}>Cập nhật</button>
+          <button className="btn ghost" onClick={() => actions.setTableForm({ id: '', name: '', status: 'AVAILABLE' })}>Làm mới</button>
         </div>
       </div>
     </section>

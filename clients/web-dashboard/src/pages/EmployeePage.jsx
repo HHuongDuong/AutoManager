@@ -1,47 +1,77 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDashboardContext } from '../context/DashboardContext';
 
 export default function EmployeePage() {
   const { state, actions, derived } = useDashboardContext();
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeePage, setEmployeePage] = useState(1);
+  const pageSize = 10;
+
+  const normalizeText = (value) => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const filteredEmployees = useMemo(() => {
+    const query = normalizeText(employeeSearch.trim());
+    if (!query) return state.employees;
+    return state.employees.filter((emp) => {
+      const name = normalizeText(emp.full_name || emp.username || '');
+      const phone = normalizeText(emp.phone || '');
+      const branchName = normalizeText(derived.branchNameMap.get(emp.branch_id) || emp.branch_id || '');
+      return name.includes(query) || phone.includes(query) || branchName.includes(query);
+    });
+  }, [employeeSearch, state.employees, derived.branchNameMap]);
+
+  const totalEmployeePages = Math.max(1, Math.ceil(filteredEmployees.length / pageSize));
+  const employeeStartIndex = (employeePage - 1) * pageSize;
+  const pagedEmployees = filteredEmployees.slice(employeeStartIndex, employeeStartIndex + pageSize);
+
+  useEffect(() => {
+    setEmployeePage(1);
+  }, [employeeSearch, state.employees.length]);
+
+  useEffect(() => {
+    if (employeePage > totalEmployeePages) setEmployeePage(totalEmployeePages);
+  }, [employeePage, totalEmployeePages]);
 
   useEffect(() => {
     if (!state.token) return;
     actions.fetchRoles();
     actions.refreshEmployees();
     actions.refreshShifts();
-    actions.fetchAttendanceLogs();
     if (!state.employeeForm.id && !state.employeeForm.branch_id) {
       actions.setEmployeeForm({ ...state.employeeForm, branch_id: state.branchId || '' });
     }
   }, [state.apiBase, state.branchId, state.token]);
 
   return (
-    <section className="grid">
+    <section className="grid employee-grid">
       <div className="card">
         <div className="card-head">
-          <h3>Ca lam</h3>
+          <h3>Ca làm</h3>
           <span>{state.shifts.length} ca</span>
         </div>
         <div className="form-grid">
           <div className="form-row">
-            <label>Ten ca</label>
+            <label>Tên ca</label>
             <input value={state.shiftForm.name} onChange={(e) => actions.setShiftForm({ ...state.shiftForm, name: e.target.value })} placeholder="Ca sang" />
           </div>
           <div className="form-row">
-            <label>Gio bat dau</label>
+            <label>Giờ bắt đầu</label>
             <input value={state.shiftForm.start_time} onChange={(e) => actions.setShiftForm({ ...state.shiftForm, start_time: e.target.value })} placeholder="08:00" />
           </div>
           <div className="form-row">
-            <label>Gio ket thuc</label>
+            <label>Giờ kết thúc</label>
             <input value={state.shiftForm.end_time} onChange={(e) => actions.setShiftForm({ ...state.shiftForm, end_time: e.target.value })} placeholder="12:00" />
           </div>
         </div>
-        <button className="btn primary" onClick={actions.handleCreateShift}>Tao ca lam</button>
+        <button className="btn primary" onClick={actions.handleCreateShift}>Tạo ca làm</button>
         <div className="table">
           <div className="table-row head">
-            <span>Ten ca</span>
-            <span>Bat dau</span>
-            <span>Ket thuc</span>
+            <span>Tên ca</span>
+            <span>Bắt đầu</span>
+            <span>Kết thúc</span>
             <span></span>
           </div>
           {state.shifts.map(shift => (
@@ -52,80 +82,28 @@ export default function EmployeePage() {
               <span></span>
             </div>
           ))}
-          {state.shifts.length === 0 && <div className="empty">Chua co ca lam.</div>}
+          {state.shifts.length === 0 && <div className="empty">Chưa có ca làm.</div>}
         </div>
       </div>
 
       <div className="card">
         <div className="card-head">
-          <h3>Lich su cham cong</h3>
-          <button className="btn ghost" onClick={actions.fetchAttendanceLogs}>Lam moi</button>
+          <h3>{state.employeeForm.id ? 'Cập nhật nhân viên' : 'Thêm nhân viên'}</h3>
+          <span>{state.employees.length} nhân viên</span>
         </div>
         <div className="form-grid">
           <div className="form-row">
-            <label>Nhan vien</label>
-            <select value={state.attendanceFilters.employee_id} onChange={(e) => actions.setAttendanceFilters({ ...state.attendanceFilters, employee_id: e.target.value })}>
-              <option value="">Tat ca</option>
-              {state.employees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.full_name || emp.username}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>Tu ngay</label>
-            <input type="date" value={state.attendanceFilters.from} onChange={(e) => actions.setAttendanceFilters({ ...state.attendanceFilters, from: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <label>Den ngay</label>
-            <input type="date" value={state.attendanceFilters.to} onChange={(e) => actions.setAttendanceFilters({ ...state.attendanceFilters, to: e.target.value })} />
-          </div>
-        </div>
-        <button className="btn primary" onClick={actions.fetchAttendanceLogs}>Loc</button>
-        <div className="table">
-          <div className="table-row head">
-            <span>Nhan vien</span>
-            <span>Ca</span>
-            <span>Check-in</span>
-            <span>Trang thai</span>
-            <span>Check-out</span>
-            <span>Trang thai</span>
-          </div>
-          {state.attendanceLogs.slice(0, 12).map(log => (
-            <div key={log.id} className="table-row">
-              <span>{log.full_name || log.employee_id}</span>
-              <span>{log.shift_name || log.shift_id || '---'}</span>
-              <span>{log.check_in ? new Date(log.check_in).toLocaleString('vi-VN') : '---'}</span>
-              <span>{log.check_in_status ? `${log.check_in_status} (${log.check_in_diff_minutes}m)` : '---'}</span>
-              <span>{log.check_out ? new Date(log.check_out).toLocaleString('vi-VN') : '---'}</span>
-              <span>{log.check_out_status ? `${log.check_out_status} (${log.check_out_diff_minutes}m)` : '---'}</span>
-            </div>
-          ))}
-          {state.attendanceLogs.length === 0 && <div className="empty">Chua co du lieu cham cong.</div>}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h3>{state.employeeForm.id ? 'Cap nhat nhan vien' : 'Them nhan vien'}</h3>
-          <span>{state.employees.length} nhan vien</span>
-        </div>
-        <div className="form-grid">
-          <div className="form-row">
-            <label>Ho ten</label>
+            <label>Họ tên</label>
             <input value={state.employeeForm.full_name} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, full_name: e.target.value })} placeholder="Nguyen Van A" />
           </div>
           <div className="form-row">
-            <label>Chuc vu</label>
-            <input value={state.employeeForm.position} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, position: e.target.value })} placeholder="Thu ngan" />
-          </div>
-          <div className="form-row">
-            <label>So dien thoai</label>
+            <label>Số điện thoại</label>
             <input value={state.employeeForm.phone} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, phone: e.target.value })} placeholder="09xxxxxxxx" />
           </div>
           <div className="form-row">
-            <label>Chi nhanh</label>
+            <label>Chi nhánh</label>
             <select value={state.employeeForm.branch_id} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, branch_id: e.target.value })} disabled={!state.branches.length}>
-              <option value="">Khong gan chi nhanh</option>
+              <option value="">Không gắn chi nhánh</option>
               {state.branches.map(branch => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
@@ -133,71 +111,98 @@ export default function EmployeePage() {
             {!state.branches.length && <small className="hint">Can tai danh sach chi nhanh truoc.</small>}
           </div>
           <div className="form-row">
-            <label>Tai khoan</label>
+            <label>Tài khoản</label>
             <input value={state.employeeForm.username} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, username: e.target.value })} placeholder="username" disabled={Boolean(state.employeeForm.id)} />
           </div>
           {!state.employeeForm.id && (
             <div className="form-row">
-              <label>Mat khau</label>
+              <label>Mật khẩu</label>
               <input type="password" value={state.employeeForm.password} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, password: e.target.value })} placeholder="********" />
             </div>
           )}
         </div>
         <div className="actions">
           <button className="btn primary" onClick={actions.handleSaveEmployee}>
-            {state.employeeForm.id ? 'Cap nhat' : 'Tao moi'}
+            {state.employeeForm.id ? 'Cập nhật' : 'Tạo mới'}
           </button>
-          <button className="btn ghost" onClick={actions.resetEmployeeForm}>Huy</button>
+          <button className="btn ghost" onClick={actions.resetEmployeeForm}>Hủy</button>
         </div>
       </div>
 
-      <div className="card">
+      <div className="card full-row">
         <div className="card-head">
           <h3>Danh sach nhan vien</h3>
-          <button className="btn ghost" onClick={actions.refreshEmployees}>Lam moi</button>
+          <button className="btn ghost" onClick={actions.refreshEmployees}>Làm mới</button>
+        </div>
+        <div className="table-toolbar">
+          <div className="form-row">
+            <label>Tìm kiếm</label>
+            <input
+              value={employeeSearch}
+              onChange={(e) => setEmployeeSearch(e.target.value)}
+              placeholder="Tên, Số điện thoại, Chi nhánh"
+            />
+          </div>
+          <div className="pager">
+            <span>
+              {filteredEmployees.length} nhân viên • Trang {employeePage}/{totalEmployeePages}
+            </span>
+            <button
+              className="btn ghost"
+              onClick={() => setEmployeePage((prev) => Math.max(1, prev - 1))}
+              disabled={employeePage <= 1}
+            >
+              Trước
+            </button>
+            <button
+              className="btn ghost"
+              onClick={() => setEmployeePage((prev) => Math.min(totalEmployeePages, prev + 1))}
+              disabled={employeePage >= totalEmployeePages}
+            >
+              Sau
+            </button>
+          </div>
         </div>
         <div className="table">
-          <div className="table-row head">
-            <span>Ho ten</span>
-            <span>Tai khoan</span>
-            <span>Chuc vu</span>
+          <div className="table-row head employee-row">
+            <span>Họ tên</span>
+            <span>Tài khoản</span>
             <span>SDT</span>
-            <span>Chi nhanh</span>
-            <span>Trang thai</span>
-            <span>Vai tro</span>
-            <span>Hanh dong</span>
+            <span>Chi nhánh</span>
+            <span>Trạng thái</span>
+            <span>Vai trò</span>
+            <span>Hành động</span>
           </div>
-          {state.employees.map(emp => (
-            <div key={emp.id} className="table-row">
+          {pagedEmployees.map(emp => (
+            <div key={emp.id} className="table-row employee-row">
               <span>{emp.full_name || emp.username}</span>
               <span>{emp.username || emp.user_id}</span>
-              <span>{emp.position || '---'}</span>
               <span>{emp.phone || '---'}</span>
               <span>{derived.branchNameMap.get(emp.branch_id) || emp.branch_id || '---'}</span>
-              <span>{emp.is_active ? 'Dang hoat dong' : 'Da khoa'}</span>
+              <span>{emp.is_active ? 'Đang hoạt động' : 'Đã khóa'}</span>
               <span>
                 <div className="inline">
                   <select value={state.roleSelections[emp.user_id] || ''} onChange={(e) => actions.setRoleSelections({ ...state.roleSelections, [emp.user_id]: e.target.value })}>
-                    <option value="">Chon role</option>
+                    <option value="">Chọn role</option>
                     {state.roles.map(role => (
                       <option key={role.id} value={role.id}>{role.name}</option>
                     ))}
                   </select>
-                  <button className="btn ghost" onClick={() => actions.handleAssignRole(emp)}>Gan</button>
+                  <button className="btn ghost" onClick={() => actions.handleAssignRole(emp)}>Gán</button>
                 </div>
               </span>
               <span>
                 <div className="inline">
-                  <button className="btn ghost" onClick={() => actions.handleEditEmployee(emp)}>Sua</button>
+                  <button className="btn ghost" onClick={() => actions.handleEditEmployee(emp)}>Sửa</button>
                   <button className="btn ghost" onClick={() => actions.handleToggleUserStatus(emp)}>
-                    {emp.is_active ? 'Vo hieu' : 'Kich hoat'}
+                    {emp.is_active ? 'Vô hiệu' : 'Kích hoạt'}
                   </button>
-                  <button className="btn danger" onClick={() => actions.handleDeleteEmployee(emp)}>Xoa</button>
+                  <button className="btn danger" onClick={() => actions.handleDeleteEmployee(emp)}>Xóa</button>
                 </div>
               </span>
             </div>
           ))}
-          {state.employees.length === 0 && <div className="empty">Chua co du lieu nhan vien.</div>}
+          {pagedEmployees.length === 0 && <div className="empty">Không có nhân viên phù hợp.</div>}
         </div>
       </div>
     </section>

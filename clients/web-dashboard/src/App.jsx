@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import LoginModal from './components/LoginModal';
+import ChangePasswordModal from './components/ChangePasswordModal';
 import StatusToast from './components/StatusToast';
 import DashboardPage from './pages/DashboardPage';
 import SalesPage from './pages/SalesPage';
@@ -67,20 +68,25 @@ export default function App() {
       <LoginModal
         show={state.showLogin}
         token={state.token}
-        apiBase={state.apiBase}
         branches={state.branches}
         branchId={state.branchId}
         loginForm={state.loginForm}
-        passwordForm={state.passwordForm}
         statusMessage={state.statusMessage}
         onClose={() => actions.setShowLogin(false)}
-        onApiBaseChange={actions.handleApiBaseChange}
         onBranchChange={actions.setBranchIdAndPersist}
         onLoginFormChange={actions.setLoginForm}
-        onPasswordFormChange={actions.setPasswordForm}
         onLogout={actions.handleLogout}
-        onChangePassword={actions.handleChangePassword}
+        onOpenChangePassword={() => actions.setShowChangePassword(true)}
         onLogin={actions.handleLogin}
+      />
+
+      <ChangePasswordModal
+        show={state.showChangePassword}
+        passwordForm={state.passwordForm}
+        statusMessage={state.statusMessage}
+        onClose={() => actions.setShowChangePassword(false)}
+        onPasswordFormChange={actions.setPasswordForm}
+        onSubmit={actions.handleChangePassword}
       />
     </div>
   );

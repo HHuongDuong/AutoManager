@@ -41,11 +41,18 @@ module.exports = function createProductsController(deps) {
   }
 
   async function listProducts(req, res) {
-    const { branch_id, category_id, q } = req.query || {};
-    const cacheKey = `products:${branch_id || 'all'}:${category_id || 'all'}:${q || ''}`;
+    const { branch_id, category_id, q, include_inactive } = req.query || {};
+    const includeInactive = ['1', 'true', 'yes'].includes(String(include_inactive || '').toLowerCase());
+    const cacheKey = `products:${branch_id || 'all'}:${category_id || 'all'}:${q || ''}:${includeInactive ? 'all' : 'active'}`;
     const cached = await redisGet(cacheKey);
     if (cached) return res.json(JSON.parse(cached));
-    const rows = await productsService.listProducts({ branchFilter: req.branchFilter, branch_id, category_id, q });
+    const rows = await productsService.listProducts({
+      branchFilter: req.branchFilter,
+      branch_id,
+      category_id,
+      q,
+      include_inactive: includeInactive
+    });
     await redisSet(cacheKey, JSON.stringify(rows), 60);
     return res.json(rows);
   }
@@ -70,12 +77,19 @@ module.exports = function createProductsController(deps) {
   }
 
   async function deleteProduct(req, res) {
-    const result = await productsService.deleteProduct(req.params.id);
-    if (!result) return res.status(404).json({ error: 'not_found' });
-    await writeAuditLog(req, 'PRODUCT_DELETE', 'product', req.params.id, {});
-    publishRealtime('product.deleted', { id: req.params.id }, req.resourceBranchId);
-    await invalidateProductsCache();
-    return res.json({ deleted: true });
+    try {
+      const result = await productsService.deleteProduct(req.params.id);
+      if (result?.error === 'product_in_use') {
+        return res.status(409).json({ error: 'product_in_use' });
+      }
+      if (!result) return res.status(404).json({ error: 'not_found' });
+      await writeAuditLog(req, 'PRODUCT_DELETE', 'product', req.params.id, {});
+      publishRealtime('product.deleted', { id: req.params.id }, req.resourceBranchId);
+      await invalidateProductsCache();
+      return res.json({ deleted: true });
+    } catch (err) {
+      return res.status(500).json({ error: 'product_delete_failed', detail: err.message });
+    }
   }
 
   async function updateBranchPrice(req, res) {

@@ -185,6 +185,14 @@ body {
   gap: 18px;
 }
 
+.grid.employee-grid {
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+}
+
+.grid .full-row {
+  grid-column: 1 / -1;
+}
+
 .grid.single {
   grid-template-columns: 1fr;
 }
@@ -305,6 +313,27 @@ body {
   gap: 8px;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.table-toolbar .form-row {
+  min-width: 240px;
+  flex: 1 1 240px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .table-row {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr;
@@ -315,6 +344,7 @@ body {
   background: #f9fafb;
   font-size: 13px;
   align-items: center;
+  text-align: center;
   animation: surface-fade 0.35s ease both;
 }
 
@@ -327,13 +357,18 @@ body {
 }
 
 .table-row.five {
-  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+}
+
+.table-row.employee-row {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .row-actions {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: center;
+  justify-self: center;
 }
 
 .table-row.head {
@@ -343,7 +378,7 @@ body {
 }
 
 .table-row strong {
-  text-align: right;
+  text-align: center;
 }
 
 .table-row select {
@@ -515,5 +550,14 @@ body {
   .table-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+
+  .table-toolbar {
+    align-items: stretch;
+  }
+
+  .pager {
+    justify-content: space-between;
+    width: 100%;
   }
 }

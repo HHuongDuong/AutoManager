@@ -7,6 +7,7 @@ export default function useDashboard() {
   const [branchId, setBranchId] = useState(localStorage.getItem('branchId') || '');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [showLogin, setShowLogin] = useState(!token);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
 
@@ -66,7 +67,6 @@ export default function useDashboard() {
     category_id: ''
   });
   const [productImageFile, setProductImageFile] = useState(null);
-  const [branchPrice, setBranchPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [issueForm, setIssueForm] = useState({ ingredient_id: '', quantity: '', reason: '' });
@@ -131,6 +131,7 @@ export default function useDashboard() {
       if (branchId) params.branch_id = branchId;
       if (categoryId) params.category_id = categoryId;
       if (productSearch) params.q = productSearch;
+      params.include_inactive = true;
       const [catData, prodData] = await Promise.all([
         api.getProductCategories(),
         api.getProducts(params)
@@ -636,6 +637,7 @@ export default function useDashboard() {
       });
       setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
       setStatusMessage('Da doi mat khau.');
+      setShowChangePassword(false);
     } catch {
       setStatusMessage('Khong the doi mat khau.');
     }
@@ -899,7 +901,6 @@ export default function useDashboard() {
   const resetProductForm = () => {
     setProductForm({ id: '', name: '', sku: '', price: '', category_id: '' });
     setProductImageFile(null);
-    setBranchPrice('');
   };
 
   const handleCreateProduct = async () => {
@@ -920,9 +921,6 @@ export default function useDashboard() {
         category_id: productForm.category_id || null
       });
       setProducts(prev => [data, ...prev]);
-      if (branchId && branchPrice !== '') {
-        await api.updateBranchPrice(data.id, { branch_id: branchId, price: Number(branchPrice) });
-      }
       resetProductForm();
       setStatusMessage('Da tao san pham.');
     } catch {
@@ -938,7 +936,6 @@ export default function useDashboard() {
       price: product.price != null ? String(product.price) : '',
       category_id: product.category_id || ''
     });
-    setBranchPrice(product.branch_price != null ? String(product.branch_price) : '');
   };
 
   const handleUpdateProduct = async () => {
@@ -951,9 +948,6 @@ export default function useDashboard() {
         category_id: productForm.category_id || null
       });
       setProducts(prev => prev.map(item => item.id === data.id ? data : item));
-      if (branchId && branchPrice !== '') {
-        await api.updateBranchPrice(productForm.id, { branch_id: branchId, price: Number(branchPrice) });
-      }
       resetProductForm();
       setStatusMessage('Da cap nhat san pham.');
     } catch {
@@ -988,8 +982,29 @@ export default function useDashboard() {
       setProducts(prev => prev.filter(item => item.id !== product.id));
       setStatusMessage('Da xoa san pham.');
       if (productForm.id === product.id) resetProductForm();
-    } catch {
+    } catch (err) {
+      if (err?.status === 409) {
+        setStatusMessage('San pham da co don hang, khong the xoa.');
+        return;
+      }
       setStatusMessage('Khong the xoa san pham.');
+    }
+  };
+
+  const handleToggleProductActive = async (product) => {
+    if (!product?.id) return;
+    const nextActive = !product.is_active;
+    const actionLabel = nextActive ? 'Mo ban' : 'Khoa ban';
+    if (!window.confirm(`${actionLabel} san pham "${product.name}"?`)) return;
+    try {
+      const updated = await api.updateProduct(product.id, { is_active: nextActive });
+      setProducts(prev => prev.map(item => item.id === product.id ? { ...item, is_active: updated.is_active } : item));
+      setStatusMessage(nextActive ? 'Da mo khoa san pham.' : 'Da khoa san pham.');
+      if (productForm.id === product.id) {
+        setProductForm(prev => ({ ...prev, is_active: updated.is_active }));
+      }
+    } catch {
+      setStatusMessage('Khong the cap nhat trang thai san pham.');
     }
   };
 
@@ -1019,6 +1034,7 @@ export default function useDashboard() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     setToken('');
+    setShowChangePassword(false);
   };
 
   const state = {
@@ -1027,6 +1043,7 @@ export default function useDashboard() {
     branchId,
     loginForm,
     showLogin,
+    showChangePassword,
     statusMessage,
     passwordForm,
     loading,
@@ -1069,7 +1086,6 @@ export default function useDashboard() {
     productSearch,
     categoryName,
     productForm,
-    branchPrice,
     inputForm,
     issueForm,
     adjustmentForm
@@ -1092,6 +1108,7 @@ export default function useDashboard() {
     setBranchIdAndPersist,
     setLoginForm,
     setShowLogin,
+    setShowChangePassword,
     setPasswordForm,
     setStatusMessage,
     setShiftForm,
@@ -1102,7 +1119,6 @@ export default function useDashboard() {
     setSelectedRoleId,
     setCategoryName,
     setProductForm,
-    setBranchPrice,
     setProductImageFile,
     setCategoryId,
     setProductSearch,
@@ -1123,6 +1139,7 @@ export default function useDashboard() {
     handleUpdateProduct,
     handleUploadProductImage,
     handleDeleteProduct,
+    handleToggleProductActive,
     resetProductForm,
     handleCreateInventoryCategory,
     handleDeleteInventoryCategory,
