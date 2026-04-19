@@ -312,7 +312,7 @@ export default function InventoryPage() {
                 />
               </div>
               <div className="form-row">
-                <label>Ly do</label>
+                <label>Lý do</label>
                 <input value={state.inputForm.reason} onChange={(e) => actions.setInputForm({ ...state.inputForm, reason: e.target.value })} />
               </div>
             </div>
