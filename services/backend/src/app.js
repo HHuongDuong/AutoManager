@@ -135,6 +135,7 @@ app.use('/', createAuthRouter({
   db,
   bcrypt,
   signToken,
+  authenticate,
   validateBody,
   loginSchema,
   getUserRoles: accessService.getUserRoles,

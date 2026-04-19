@@ -471,7 +471,7 @@ export default function useMobileAppState() {
     }
     setCart(prev => prev
       .map(item => item.id === id
-        ? { ...item, quantity: Math.max(1, item.quantity + delta) }
+        ? { ...item, quantity: Math.max(0, item.quantity + delta) }
         : item)
       .filter(item => item.quantity > 0)
     );

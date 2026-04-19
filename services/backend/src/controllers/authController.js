@@ -34,5 +34,13 @@ module.exports = function createAuthController(deps) {
     });
   }
 
-  return { login };
+  async function me(req, res) {
+    const userId = req.user?.sub;
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    const profile = await authService.getMe(userId);
+    if (!profile) return res.status(404).json({ error: 'not_found' });
+    return res.json(profile);
+  }
+
+  return { login, me };
 };

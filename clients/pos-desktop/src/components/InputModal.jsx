@@ -14,25 +14,25 @@ export default function InputModal({
     <section className="modal">
       <div className="modal-card">
         <header>
-          <h2>Nhap kho nguyen lieu</h2>
+          <h2>Nhập kho nguyên liệu</h2>
           <button onClick={onClose}>×</button>
         </header>
         <div className="modal-body">
           <div className="summary">
             <div className="form-row">
-              <label>Nguyen lieu</label>
+              <label>Nguyên liệu</label>
               <select
                 value={inputForm.ingredient_id}
                 onChange={(e) => onInputChange({ ...inputForm, ingredient_id: e.target.value })}
               >
-                <option value="">Chon nguyen lieu</option>
+                <option value="">Chọn nguyên liệu</option>
                 {ingredients.map(ing => (
                   <option key={ing.id} value={ing.id}>{ing.name}</option>
                 ))}
               </select>
             </div>
             <div className="form-row">
-              <label>So luong</label>
+              <label>Số lượng</label>
               <input
                 type="number"
                 value={inputForm.quantity}
@@ -40,7 +40,7 @@ export default function InputModal({
               />
             </div>
             <div className="form-row">
-              <label>Don gia</label>
+              <label>Đơn giá</label>
               <input
                 type="number"
                 value={inputForm.unit_cost}
@@ -56,7 +56,7 @@ export default function InputModal({
             </div>
           </div>
           <div className="methods">
-            <h4>Phieu nhap gan day</h4>
+            <h4>Phiếu nhập gần đây</h4>
             <div className="cart-list">
               {inventoryInputs.slice(0, 6).map(input => (
                 <div key={input.id} className="cart-item">
@@ -67,13 +67,13 @@ export default function InputModal({
                   <strong>{formatVnd(input.total_cost || 0)}</strong>
                 </div>
               ))}
-              {inventoryInputs.length === 0 && <div className="empty">Chua co phieu nhap.</div>}
+              {inventoryInputs.length === 0 && <div className="empty">Chưa có phiếu nhập.</div>}
             </div>
           </div>
         </div>
         <footer>
-          <button className="btn ghost" onClick={onClose}>Dong</button>
-          <button className="btn primary" onClick={onCreateInput}>Tao phieu nhap</button>
+          <button className="btn ghost" onClick={onClose}>Đóng</button>
+          <button className="btn primary" onClick={onCreateInput}>Tạo phiếu nhập</button>
         </footer>
       </div>
     </section>

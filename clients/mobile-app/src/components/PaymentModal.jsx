@@ -15,6 +15,7 @@ const PaymentModal = () => {
     changeDue,
     payNow,
     setPayNow,
+    statusMessage,
     handleCreateOrder,
     handlePayOrder
   } = useMobileApp();
@@ -23,7 +24,12 @@ const PaymentModal = () => {
     <Modal visible={showPayment} transparent animationType="slide">
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.cardTitle}>Thanh toán</Text>
+          <View style={styles.rowBetween}>
+            <Text style={styles.cardTitle}>Thanh toán</Text>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowPayment(false)}>
+              <Text style={styles.modalCloseText}>X</Text>
+            </TouchableOpacity>
+          </View>
           {currentOrderId ? (
             <Text style={styles.muted}>Đơn: {currentOrderId}</Text>
           ) : null}
@@ -36,26 +42,27 @@ const PaymentModal = () => {
             keyboardType="numeric"
           />
           <Text style={styles.muted}>Tiền thối: {formatVnd(changeDue)}</Text>
-          <View style={styles.row}>
-            {!currentOrderId ? (
-              <TouchableOpacity style={styles.segment} onPress={() => setPayNow(v => !v)}>
-                <Text>{payNow ? 'Thanh toán ngay' : 'Thanh toán sau'}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.segment}>
-                <Text>Thanh toán đơn</Text>
+          {!currentOrderId ? (
+            <TouchableOpacity style={styles.checkboxRow} onPress={() => setPayNow(v => !v)}>
+              <View style={[styles.checkboxBox, payNow && styles.checkboxBoxChecked]}>
+                {payNow ? <Text style={styles.checkboxTick}>✓</Text> : null}
               </View>
-            )}
-            <TouchableOpacity style={styles.outlineBtn} onPress={() => setShowPayment(false)}>
-              <Text style={styles.outlineText}>Đóng</Text>
+              <Text style={styles.checkboxLabel}>Thanh toán ngay</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.segment}>
+              <Text>Thanh toán đơn</Text>
+            </View>
+          )}
+          <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={currentOrderId ? handlePayOrder : handleCreateOrder}
+            >
+              <Text style={styles.primaryText}>Xác nhận</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={currentOrderId ? handlePayOrder : handleCreateOrder}
-          >
-            <Text style={styles.primaryText}>Xác nhận</Text>
-          </TouchableOpacity>
+          {statusMessage ? <Text style={styles.status}>{statusMessage}</Text> : null}
         </View>
       </View>
     </Modal>

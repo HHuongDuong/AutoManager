@@ -78,6 +78,14 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12
   },
+  openOrderActions: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    flexWrap: 'wrap',
+    marginLeft: -50
+  },
   field: {
     flex: 1,
     gap: 6
@@ -87,6 +95,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1
   },
   primaryBtnSmall: {
@@ -94,11 +103,21 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    alignItems: 'center'
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  primaryBtnCompact: {
+    backgroundColor: '#005bd3',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   primaryText: {
     color: '#ffffff',
-    fontWeight: '700'
+    fontWeight: '700',
+    textAlign: 'center'
   },
   outlineBtn: {
     borderWidth: 1,
@@ -106,17 +125,30 @@ export const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1
   },
   outlineText: {
-    color: '#1f2124'
+    color: '#1f2124',
+    textAlign: 'center'
   },
   ghostBtn: {
     borderWidth: 1,
     borderColor: '#e1e3e5',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  ghostBtnCompact: {
+    borderWidth: 1,
+    borderColor: '#e1e3e5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   ghostText: {
     color: '#1f2124'
@@ -251,5 +283,47 @@ export const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: '#e1e3e5'
+  },
+  modalCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e1e3e5',
+    backgroundColor: '#ffffff'
+  },
+  modalCloseText: {
+    color: '#1f2124',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  checkboxBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#cbd2d9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff'
+  },
+  checkboxBoxChecked: {
+    backgroundColor: '#005bd3',
+    borderColor: '#005bd3'
+  },
+  checkboxTick: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  checkboxLabel: {
+    color: '#1f2124'
   }
 });

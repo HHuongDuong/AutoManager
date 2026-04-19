@@ -16,16 +16,16 @@ export default function MenuPanel({
         <input
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Tim mon, SKU..."
+          placeholder="Tìm món, SKU..."
         />
-        <button className="btn ghost" onClick={onClearSearch}>Xoa</button>
+        <button className="btn ghost" onClick={onClearSearch}>Xóa</button>
       </div>
       <div className="segmented">
         <button
           className={categoryId ? 'btn ghost' : 'btn primary'}
           onClick={() => onSelectCategory('')}
         >
-          Tat ca nhom
+          Tất cả nhóm
         </button>
         {categories.map(cat => (
           <button
@@ -38,9 +38,9 @@ export default function MenuPanel({
         ))}
       </div>
       <div className="menu-grid">
-        {loading && <div className="card">Dang tai mon...</div>}
+        {loading && <div className="card">Đang tải món...</div>}
         {!loading && products.length === 0 && (
-          <div className="card">Khong co du lieu mon.</div>
+          <div className="card">Không có dữ liệu món.</div>
         )}
         {products.map(product => (
           <button key={product.id || product.name} className="menu-item" onClick={() => onAddToCart(product)}>

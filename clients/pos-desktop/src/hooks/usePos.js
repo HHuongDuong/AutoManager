@@ -29,6 +29,7 @@ export default function usePos() {
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [inputForm, setInputForm] = useState({ ingredient_id: '', quantity: '', unit_cost: '', reason: '' });
   const [showInputModal, setShowInputModal] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [wsStatus, setWsStatus] = useState('disconnected');
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [search, setSearch] = useState('');
@@ -587,6 +588,7 @@ export default function usePos() {
     payNow,
     statusMessage,
     showLogin,
+    showChangePassword,
     loginForm,
     passwordForm
   };
@@ -606,6 +608,7 @@ export default function usePos() {
     setPaymentMethod,
     setPayNow,
     setShowLogin,
+    setShowChangePassword,
     setLoginForm,
     setPasswordForm,
     setInputForm,

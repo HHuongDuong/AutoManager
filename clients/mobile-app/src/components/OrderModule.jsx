@@ -89,8 +89,8 @@ const OrderModule = () => {
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle}>Giỏ hàng</Text>
           {currentOrderId ? (
-            <TouchableOpacity style={styles.ghostBtn} onPress={clearCurrentOrder}>
-              <Text style={styles.ghostText}>Hủy sửa</Text>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={clearCurrentOrder}>
+              <Text style={styles.modalCloseText}>X</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -140,15 +140,14 @@ const OrderModule = () => {
             <View key={order.id} style={styles.productCard}>
               <View>
                 <Text style={styles.productName}>{tableNameMap[order.table_id] || order.table_id || 'Bàn chưa chọn'}</Text>
-                <Text style={styles.productPrice}>Đơn: {order.id}</Text>
                 <Text style={styles.productPrice}>Tổng: {formatVnd(order.total_amount || 0)}</Text>
               </View>
-              <View style={styles.row}>
-                <TouchableOpacity style={styles.ghostBtn} onPress={() => loadOrder(order.id)}>
+              <View style={styles.openOrderActions}>
+                <TouchableOpacity style={styles.ghostBtnCompact} onPress={() => loadOrder(order.id)}>
                   <Text style={styles.ghostText}>Mở</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.primaryBtnSmall}
+                  style={styles.primaryBtnCompact}
                   onPress={() => {
                     loadOrder(order.id);
                     setShowPayment(true);

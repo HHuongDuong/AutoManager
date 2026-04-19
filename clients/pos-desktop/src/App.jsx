@@ -5,6 +5,7 @@ import CartPanel from './components/CartPanel';
 import PaymentModal from './components/PaymentModal';
 import InputModal from './components/InputModal';
 import LoginModal from './components/LoginModal';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 const formatVnd = (value) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
@@ -25,11 +26,6 @@ export default function App() {
 
   const handleBranchChange = (value) => {
     actions.setBranchId(value);
-    actions.persistSettings();
-  };
-
-  const handleApiBaseChange = (value) => {
-    actions.setApiBase(value);
     actions.persistSettings();
   };
 
@@ -125,20 +121,27 @@ export default function App() {
       <LoginModal
         show={state.showLogin}
         token={state.token}
-        apiBase={state.apiBase}
         branches={state.branches}
         branchId={state.branchId}
         loginForm={state.loginForm}
-        passwordForm={state.passwordForm}
         onClose={() => actions.setShowLogin(false)}
-        onApiBaseChange={handleApiBaseChange}
         onBranchChange={handleBranchChange}
         onLoginFormChange={actions.setLoginForm}
-        onPasswordFormChange={actions.setPasswordForm}
         onLogout={actions.handleLogout}
-        onChangePassword={actions.handleChangePassword}
+        onOpenChangePassword={() => actions.setShowChangePassword(true)}
         onLogin={actions.handleLogin}
         onPersistSettings={actions.persistSettings}
+      />
+
+      <ChangePasswordModal
+        show={state.showChangePassword}
+        passwordForm={state.passwordForm}
+        onPasswordFormChange={actions.setPasswordForm}
+        onClose={() => actions.setShowChangePassword(false)}
+        onSubmit={() => {
+          actions.handleChangePassword();
+          actions.setShowChangePassword(false);
+        }}
       />
     </div>
   );

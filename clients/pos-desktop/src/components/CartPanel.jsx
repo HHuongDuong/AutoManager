@@ -27,11 +27,11 @@ export default function CartPanel({
   return (
     <aside className="cart-panel">
       <div className="cart-header">
-        <h2>Don hang</h2>
-        <button className="btn ghost" onClick={onClearOrder}>Tao moi</button>
+        <h2>Đơn hàng</h2>
+        <button className="btn ghost" onClick={onClearOrder}>Tạo mới</button>
       </div>
       <div className="form-row">
-        <label>Loai don</label>
+        <label>Loại đơn</label>
         <select value={orderType} onChange={(e) => onOrderTypeChange(e.target.value)}>
           <option value="DINE_IN">DINE_IN</option>
           <option value="TAKE_AWAY">TAKE_AWAY</option>
@@ -39,9 +39,9 @@ export default function CartPanel({
       </div>
       {orderType === 'DINE_IN' && (
         <div className="form-row">
-          <label>Chon ban</label>
+          <label>Chọn bàn</label>
           <select value={selectedTableId} onChange={(e) => onSelectTable(e.target.value)}>
-            <option value="">-- Chon ban --</option>
+            <option value="">-- Chọn bàn --</option>
             {tables.filter(table => table.status === 'AVAILABLE').map(table => (
               <option key={table.id} value={table.id}>
                 {table.name} ({table.status})
@@ -50,9 +50,9 @@ export default function CartPanel({
           </select>
         </div>
       )}
-      {currentOrderId && <div className="status">Dang chinh phieu: {currentOrderId}</div>}
+      {currentOrderId && <div className="status">Đang chỉnh phiếu: {currentOrderId}</div>}
       <div className="cart-list">
-        {cart.length === 0 && <div className="empty">Chua co mon nao.</div>}
+        {cart.length === 0 && <div className="empty">Chưa có món nào.</div>}
         {cart.map(item => (
           <div key={item.id} className="cart-item">
             <div>
@@ -71,43 +71,43 @@ export default function CartPanel({
       </div>
       <div className="cart-summary">
         <div>
-          <span>Tam tinh</span>
+          <span>Tạm tính</span>
           <strong>{formatVnd(total)}</strong>
         </div>
         <div>
-          <span>Giam gia</span>
+          <span>Giảm giá</span>
           <strong>{formatVnd(0)}</strong>
         </div>
         <div className="total">
-          <span>Tong cong</span>
+          <span>Tổng cộng</span>
           <strong>{formatVnd(total)}</strong>
         </div>
       </div>
       <div className="cart-actions">
-        <button className="btn ghost" onClick={onSyncQueue}>Dong bo ({queuePendingCount})</button>
-        <button className="btn ghost" onClick={onShowInputModal}>Nhap kho</button>
-        <button className="btn primary" onClick={onShowPayment} disabled={!cart.length}>Thanh toan</button>
+        <button className="btn ghost" onClick={onSyncQueue}>Đồng bộ ({queuePendingCount})</button>
+        <button className="btn ghost" onClick={onShowInputModal}>Nhập kho</button>
+        <button className="btn primary" onClick={onShowPayment} disabled={!cart.length}>Thanh toán</button>
       </div>
       {statusMessage && <div className="status">{statusMessage}</div>}
       <div className="methods">
-        <h4>Phieu mo</h4>
-        {loadingOrders && <div className="empty">Dang tai phieu...</div>}
-        {!loadingOrders && openOrders.length === 0 && <div className="empty">Chua co phieu mo.</div>}
+        <h4>Phiếu mở</h4>
+        {loadingOrders && <div className="empty">Đang tải phiếu...</div>}
+        {!loadingOrders && openOrders.length === 0 && <div className="empty">Chưa có phiếu mở.</div>}
         <div className="cart-list">
           {openOrders.slice(0, 6).map(order => (
             <div key={order.id} className="cart-item">
               <div>
-                <h4>{tableNameMap[order.table_id] || order.table_id || 'Ban chua chon'}</h4>
-                <span>Don: {order.id}</span>
+                <h4>{tableNameMap[order.table_id] || order.table_id || 'Bàn chưa chọn'}</h4>
+                <span>Đơn: {order.id}</span>
                 <span>{new Date(order.created_at).toLocaleString('vi-VN')}</span>
               </div>
-              <button className="btn ghost" onClick={() => onLoadOrder(order.id)}>Mo</button>
-              <button className="btn ghost" onClick={() => onCancelOrder(order.id)}>Xoa</button>
+              <button className="btn ghost" onClick={() => onLoadOrder(order.id)}>Mở</button>
+              <button className="btn ghost" onClick={() => onCancelOrder(order.id)}>Xóa</button>
             </div>
           ))}
         </div>
       </div>
-      <div className="status">Trang thai: {isOnline ? 'Online' : 'Offline'} • WS: {wsStatus}</div>
+      <div className="status">Trạng thái: {isOnline ? 'Online' : 'Offline'} • WS: {wsStatus}</div>
     </aside>
   );
 }

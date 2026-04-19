@@ -41,5 +41,29 @@ module.exports = function createAuthService(deps) {
     };
   }
 
-  return { login };
+  async function getMe(userId) {
+    const userRes = await db.query(
+      'SELECT id, username, is_active FROM users WHERE id = $1',
+      [userId]
+    );
+    const user = userRes.rows[0] || null;
+    if (!user) return null;
+
+    const employeeRes = await db.query(
+      'SELECT id, branch_id, full_name, phone, position FROM employees WHERE user_id = $1',
+      [userId]
+    );
+    const employee = employeeRes.rows[0] || null;
+
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
+        is_active: user.is_active
+      },
+      employee
+    };
+  }
+
+  return { login, getMe };
 };
