@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f6f6f7'
+    backgroundColor: '#f3f6fa'
   },
   loginOnly: {
     flex: 1,
@@ -23,7 +23,7 @@ export const styles = StyleSheet.create({
   brand: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#1f2124'
+    color: '#0f172a'
   },
   card: {
     backgroundColor: '#ffffff',
@@ -31,42 +31,42 @@ export const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#e1e3e5'
+    borderColor: '#e2e8f0'
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1f2124'
+    color: '#0f172a'
   },
   label: {
     fontSize: 12,
-    color: '#6d7175'
+    color: '#64748b'
   },
   input: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f8fafc',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#1f2124',
+    color: '#0f172a',
     borderWidth: 1,
-    borderColor: '#e1e3e5'
+    borderColor: '#e2e8f0'
   },
   dropdownInput: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#f8fafc',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#e1e3e5'
+    borderColor: '#e2e8f0'
   },
   dropdownText: {
-    color: '#1f2124'
+    color: '#0f172a'
   },
   dropdownCaret: {
-    color: '#6d7175'
+    color: '#64748b'
   },
   row: {
     flexDirection: 'row',
@@ -91,7 +91,7 @@ export const styles = StyleSheet.create({
     gap: 6
   },
   primaryBtn: {
-    backgroundColor: '#005bd3',
+    backgroundColor: '#2563eb',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -99,7 +99,7 @@ export const styles = StyleSheet.create({
     flex: 1
   },
   primaryBtnSmall: {
-    backgroundColor: '#005bd3',
+    backgroundColor: '#2563eb',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
@@ -107,7 +107,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   primaryBtnCompact: {
-    backgroundColor: '#005bd3',
+    backgroundColor: '#2563eb',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
@@ -121,7 +121,7 @@ export const styles = StyleSheet.create({
   },
   outlineBtn: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -129,12 +129,12 @@ export const styles = StyleSheet.create({
     flex: 1
   },
   outlineText: {
-    color: '#1f2124',
+    color: '#0f172a',
     textAlign: 'center'
   },
   ghostBtn: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
@@ -143,7 +143,7 @@ export const styles = StyleSheet.create({
   },
   ghostBtnCompact: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
@@ -151,7 +151,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   ghostText: {
-    color: '#1f2124'
+    color: '#0f172a'
   },
   moduleTabs: {
     flexDirection: 'row',
@@ -161,18 +161,18 @@ export const styles = StyleSheet.create({
   },
   moduleTab: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: '#ffffff'
   },
   moduleTabActive: {
-    backgroundColor: '#005bd3',
-    borderColor: '#0047aa'
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8'
   },
   moduleTabText: {
-    color: '#1f2124',
+    color: '#0f172a',
     fontSize: 12,
     fontWeight: '600'
   },
@@ -188,17 +188,17 @@ export const styles = StyleSheet.create({
   },
   segment: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8
   },
   segmentActive: {
-    backgroundColor: '#005bd3',
-    borderColor: '#0047aa'
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8'
   },
   segmentText: {
-    color: '#1f2124',
+    color: '#0f172a',
     fontSize: 12
   },
   segmentTextActive: {
@@ -217,18 +217,18 @@ export const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e1e3e5'
+    borderColor: '#e2e8f0'
   },
   productName: {
-    color: '#1f2124',
+    color: '#0f172a',
     fontWeight: '600'
   },
   productPrice: {
-    color: '#6d7175',
+    color: '#64748b',
     fontSize: 12
   },
   addBtn: {
-    color: '#005bd3',
+    color: '#2563eb',
     fontWeight: '600'
   },
   cartRow: {
@@ -244,7 +244,7 @@ export const styles = StyleSheet.create({
   },
   qtyBtn: {
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     width: 28,
     height: 28,
     borderRadius: 8,
@@ -256,18 +256,18 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#e1e3e5',
+    borderTopColor: '#e2e8f0',
     paddingTop: 10
   },
   totalValue: {
-    color: '#005bd3',
+    color: '#2563eb',
     fontWeight: '700'
   },
   muted: {
-    color: '#6d7175'
+    color: '#64748b'
   },
   status: {
-    color: '#005bd3',
+    color: '#2563eb',
     textAlign: 'center'
   },
   modalBackdrop: {
@@ -282,7 +282,7 @@ export const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#e1e3e5'
+    borderColor: '#e2e8f0'
   },
   modalCloseBtn: {
     width: 28,
@@ -291,11 +291,11 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e1e3e5',
+    borderColor: '#e2e8f0',
     backgroundColor: '#ffffff'
   },
   modalCloseText: {
-    color: '#1f2124',
+    color: '#0f172a',
     fontSize: 12,
     fontWeight: '700'
   },
@@ -315,8 +315,8 @@ export const styles = StyleSheet.create({
     backgroundColor: '#ffffff'
   },
   checkboxBoxChecked: {
-    backgroundColor: '#005bd3',
-    borderColor: '#005bd3'
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb'
   },
   checkboxTick: {
     color: '#ffffff',
@@ -324,6 +324,6 @@ export const styles = StyleSheet.create({
     fontWeight: '700'
   },
   checkboxLabel: {
-    color: '#1f2124'
+    color: '#0f172a'
   }
 });

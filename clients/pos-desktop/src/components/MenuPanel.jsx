@@ -1,4 +1,5 @@
 export default function MenuPanel({
+  apiBase,
   search,
   onSearchChange,
   onClearSearch,
@@ -10,6 +11,12 @@ export default function MenuPanel({
   onAddToCart,
   formatVnd
 }) {
+  const resolveImageUrl = (imageUrl) => {
+    if (!imageUrl) return '';
+    if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+    return `${apiBase}${imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`}`;
+  };
+
   return (
     <section className="menu-panel">
       <div className="search-row">
@@ -44,7 +51,21 @@ export default function MenuPanel({
         )}
         {products.map(product => (
           <button key={product.id || product.name} className="menu-item" onClick={() => onAddToCart(product)}>
-            <div>
+            <div className="menu-item-media">
+              {product.image_url ? (
+                <img
+                  className="menu-item-image"
+                  src={resolveImageUrl(product.image_url)}
+                  alt={product.name}
+                  loading="lazy"
+                />
+              ) : (
+                <div className="menu-item-placeholder" aria-hidden="true">
+                  {String(product.name || '?').slice(0, 1).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="menu-item-copy">
               <h3>{product.name}</h3>
               <p>{product.sku || '---'}</p>
             </div>

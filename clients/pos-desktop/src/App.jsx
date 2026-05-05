@@ -41,6 +41,7 @@ export default function App() {
           />
           <main className="layout">
             <MenuPanel
+              apiBase={state.apiBase}
               search={state.search}
               onSearchChange={actions.setSearch}
               onClearSearch={() => actions.setSearch('')}

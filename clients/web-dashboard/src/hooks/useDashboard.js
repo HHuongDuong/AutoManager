@@ -976,7 +976,7 @@ export default function useDashboard() {
       id: product.id,
       name: product.name || '',
       sku: product.sku || '',
-      price: product.price != null ? String(product.price) : '',
+      price: product.price != null ? String(Math.round(Number(product.price))) : '',
       category_id: product.category_id || ''
     });
   };
