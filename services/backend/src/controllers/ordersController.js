@@ -38,6 +38,11 @@ module.exports = function createOrdersController(deps) {
         metadata,
         userId: req.user?.sub || null
       });
+      if (result?.error === 'table_not_found') return res.status(404).json({ error: 'table_not_found' });
+      if (result?.error === 'table_branch_mismatch') return res.status(409).json({ error: 'table_branch_mismatch' });
+      if (result?.error === 'table_occupied') {
+        return res.status(409).json({ error: 'table_occupied', open_order_id: result.open_order_id || null });
+      }
 
       await writeAuditLog(req, 'ORDER_CREATE', 'order', result.orderId, {
         branch_id,
@@ -46,6 +51,9 @@ module.exports = function createOrdersController(deps) {
         payments: result.paymentIds.length
       });
       publishRealtime('order.created', { id: result.orderId, branch_id }, branch_id);
+      if (result.tableId && result.tableStatus) {
+        publishRealtime('table.status', { id: result.tableId, status: result.tableStatus }, branch_id);
+      }
       const order = await ordersService.getOrderById(result.orderId);
       return res.status(201).json(order);
     } catch (err) {
@@ -75,6 +83,9 @@ module.exports = function createOrdersController(deps) {
     if (result?.error === 'already_cancelled') return res.status(409).json({ error: 'already_cancelled' });
     await writeAuditLog(req, 'ORDER_CANCEL', 'order', req.params.id, { reason });
     publishRealtime('order.cancelled', { id: req.params.id, reason }, result.order.branch_id);
+    if (result.tableId && result.tableStatus) {
+      publishRealtime('table.status', { id: result.tableId, status: result.tableStatus }, result.order.branch_id);
+    }
     return res.json({ cancelled: true });
   }
 
@@ -145,6 +156,9 @@ module.exports = function createOrdersController(deps) {
     await writeAuditLog(req, 'ORDER_CLOSE', 'order', req.params.id, {});
     const order = await ordersService.getOrderById(req.params.id);
     if (order?.branch_id) publishRealtime('order.closed', { id: req.params.id }, order.branch_id);
+    if (order?.branch_id && result.tableId && result.tableStatus) {
+      publishRealtime('table.status', { id: result.tableId, status: result.tableStatus }, order.branch_id);
+    }
     return res.json({ closed: true });
   }
 

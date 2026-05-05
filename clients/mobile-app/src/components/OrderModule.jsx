@@ -1,5 +1,5 @@
-import React from 'react';
-import { ActivityIndicator, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useMobileApp } from '../context/MobileAppContext';
 import { styles } from '../styles/appStyles';
 import { formatVnd } from '../utils/format';
@@ -29,10 +29,18 @@ const OrderModule = () => {
     fetchOpenOrders
   } = useMobileApp();
 
+  const productRows = useMemo(() => {
+    const rows = [];
+    for (let index = 0; index < products.length; index += 2) {
+      rows.push(products.slice(index, index + 2));
+    }
+    return rows;
+  }, [products]);
+
   return (
     <>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>POS Order</Text>
+        <Text style={styles.cardTitle}>Bán hàng</Text>
         <View style={styles.segmented}>
           {['DINE_IN', 'TAKE_AWAY'].map(type => (
             <TouchableOpacity
@@ -44,44 +52,57 @@ const OrderModule = () => {
             </TouchableOpacity>
           ))}
         </View>
+
         {orderType === 'DINE_IN' && (
           <View style={styles.row}>
             <View style={styles.field}>
               <Text style={styles.label}>Chọn bàn</Text>
               <TouchableOpacity style={styles.dropdownInput} onPress={() => setShowTablePicker(true)}>
                 <Text style={styles.dropdownText}>{tableNameMap[selectedTableId] || 'Chưa chọn'}</Text>
-                <Text style={styles.dropdownCaret}>▼</Text>
+                <Text style={styles.dropdownCaret}>v</Text>
               </TouchableOpacity>
-              {availableTables.length === 0 && (
+              {availableTables.length === 0 ? (
                 <Text style={styles.muted}>Chưa có bàn trống.</Text>
-              )}
+              ) : null}
             </View>
           </View>
         )}
+
         <TextInput
           style={styles.input}
           placeholder="Tìm món..."
           value={search}
           onChangeText={setSearch}
         />
+
         {loadingProducts ? (
           <ActivityIndicator />
         ) : (
-          <View style={styles.productList}>
-            {products.map(product => (
-              <TouchableOpacity
-                key={product.id || product.name}
-                style={styles.productCard}
-                onPress={() => addToCart(product)}
-              >
-                <View>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.productPrice}>{formatVnd(product.price)}</Text>
-                </View>
-                <Text style={styles.addBtn}>+ Thêm</Text>
-              </TouchableOpacity>
+          <ScrollView
+            style={styles.productGridList}
+            nestedScrollEnabled
+            contentContainerStyle={styles.productList}
+          >
+            {productRows.map((row, rowIndex) => (
+              <View key={`row-${rowIndex}`} style={styles.productGridRow}>
+                {row.map((item) => (
+                  <View key={item.id || item.name} style={styles.productGridItem}>
+                    <TouchableOpacity
+                      style={styles.productGridCard}
+                      onPress={() => addToCart(item)}
+                    >
+                      <View style={styles.productGridMeta}>
+                        <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
+                        <Text style={styles.productPrice}>{formatVnd(item.price)}</Text>
+                      </View>
+                      <Text style={styles.addBtn}>+ Thêm</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {row.length === 1 ? <View style={styles.productGridItem} /> : null}
+              </View>
             ))}
-          </View>
+          </ScrollView>
         )}
       </View>
 
@@ -97,7 +118,7 @@ const OrderModule = () => {
         {currentOrderId ? (
           <Text style={styles.muted}>Đang sửa đơn: {currentOrderId}</Text>
         ) : null}
-        {cart.length === 0 && <Text style={styles.muted}>Chưa có món trong giỏ.</Text>}
+        {cart.length === 0 ? <Text style={styles.muted}>Chưa có món trong giỏ.</Text> : null}
         {cart.map(item => (
           <View key={item.id} style={styles.cartRow}>
             <View>

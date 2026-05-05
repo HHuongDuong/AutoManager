@@ -66,9 +66,23 @@ module.exports = function createEmployeesService(deps) {
 
   async function updateEmployee(id, payload) {
     const { full_name, phone, position, branch_id } = payload;
+    if (branch_id) {
+      const branchRes = await db.query('SELECT 1 FROM branches WHERE id = $1', [branch_id]);
+      if (branchRes.rows.length === 0) return { error: 'branch_not_found' };
+    }
+    const shouldUpdateBranch = Object.prototype.hasOwnProperty.call(payload, 'branch_id');
     const result = await db.query(
-      'UPDATE employees SET full_name = COALESCE($2, full_name), phone = COALESCE($3, phone), position = COALESCE($4, position), branch_id = COALESCE($5, branch_id) WHERE id = $1 RETURNING id, user_id, branch_id, full_name, phone, position',
-      [id, full_name ?? null, phone ?? null, position ?? null, branch_id ?? null]
+      `UPDATE employees
+       SET full_name = COALESCE($2, full_name),
+           phone = COALESCE($3, phone),
+           position = COALESCE($4, position),
+           branch_id = CASE
+             WHEN $5::boolean THEN $6::uuid
+             ELSE branch_id
+           END
+       WHERE id = $1
+       RETURNING id, user_id, branch_id, full_name, phone, position`,
+      [id, full_name ?? null, phone ?? null, position ?? null, shouldUpdateBranch, branch_id ?? null]
     );
     return result.rows[0] || null;
   }

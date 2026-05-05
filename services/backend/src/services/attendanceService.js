@@ -28,6 +28,8 @@ module.exports = function createAttendanceService(deps) {
 
   async function checkIn(payload) {
     const { employee_id, shift_id, latitude, longitude, branch_id, createdBy } = payload;
+    const employeeRes = await db.query('SELECT id FROM employees WHERE id = $1', [employee_id]);
+    if (employeeRes.rows.length === 0) return { error: 'employee_not_found' };
     const branch = await getBranchLocation(branch_id);
     if (!branch || branch.latitude == null || branch.longitude == null) {
       return { error: 'branch_location_missing' };
@@ -45,13 +47,15 @@ module.exports = function createAttendanceService(deps) {
     shiftStart.setHours(startHour || 0, startMinute || 0, 0, 0);
     const checkStatus = getShiftCheckStatus(shiftStart, now);
     const openRes = await db.query(
-      'SELECT id FROM attendance WHERE employee_id = $1 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1',
+      'SELECT id, branch_id FROM attendance WHERE employee_id = $1 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1',
       [employee_id]
     );
-    if (openRes.rows.length > 0) return { error: 'already_checked_in' };
+    if (openRes.rows.length > 0) {
+      return { error: 'already_checked_in', open_branch_id: openRes.rows[0].branch_id };
+    }
     const result = await db.query(
-      'INSERT INTO attendance (id, employee_id, shift_id, check_in) VALUES ($1, $2, $3, now()) RETURNING id, employee_id, shift_id, check_in',
-      [randomUUID(), employee_id, shift_id]
+      'INSERT INTO attendance (id, employee_id, branch_id, shift_id, check_in) VALUES ($1, $2, $3, $4, now()) RETURNING id, employee_id, branch_id, shift_id, check_in',
+      [randomUUID(), employee_id, branch_id, shift_id]
     );
     return {
       record: result.rows[0],
@@ -62,6 +66,8 @@ module.exports = function createAttendanceService(deps) {
 
   async function checkOut(payload) {
     const { employee_id, latitude, longitude, branch_id } = payload;
+    const employeeRes = await db.query('SELECT id FROM employees WHERE id = $1', [employee_id]);
+    if (employeeRes.rows.length === 0) return { error: 'employee_not_found' };
     const branch = await getBranchLocation(branch_id);
     if (!branch || branch.latitude == null || branch.longitude == null) {
       return { error: 'branch_location_missing' };
@@ -71,10 +77,19 @@ module.exports = function createAttendanceService(deps) {
       return { error: 'too_far', distance_m: Math.round(distance), max_distance_m: 50 };
     }
     const result = await db.query(
-      'UPDATE attendance SET check_out = now() WHERE employee_id = $1 AND check_out IS NULL RETURNING id, employee_id, shift_id, check_in, check_out',
-      [employee_id]
+      'UPDATE attendance SET check_out = now() WHERE employee_id = $1 AND branch_id = $2 AND check_out IS NULL RETURNING id, employee_id, branch_id, shift_id, check_in, check_out',
+      [employee_id, branch_id]
     );
-    if (result.rows.length === 0) return { error: 'not_checked_in' };
+    if (result.rows.length === 0) {
+      const openRes = await db.query(
+        'SELECT branch_id FROM attendance WHERE employee_id = $1 AND check_out IS NULL ORDER BY check_in DESC LIMIT 1',
+        [employee_id]
+      );
+      if (openRes.rows.length > 0) {
+        return { error: 'checked_in_other_branch', open_branch_id: openRes.rows[0].branch_id };
+      }
+      return { error: 'not_checked_in' };
+    }
     const shiftRes = await db.query('SELECT id, name, start_time, end_time FROM shifts WHERE id = $1', [result.rows[0].shift_id]);
     const shift = shiftRes.rows[0];
     let checkOutStatus = null;
@@ -102,10 +117,10 @@ module.exports = function createAttendanceService(deps) {
     if (branchFilter?.where) filters.push(branchFilter.where.replace(/^WHERE /, ''));
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const result = await db.query(
-      `SELECT a.id, a.employee_id, e.full_name, e.branch_id,
+      `SELECT a.id, a.employee_id, e.full_name, a.branch_id,
               a.shift_id, s.name AS shift_name, s.start_time, s.end_time,
-              a.check_in, a.check_out
-       FROM attendance a
+               a.check_in, a.check_out
+        FROM attendance a
        JOIN employees e ON e.id = a.employee_id
        LEFT JOIN shifts s ON s.id = a.shift_id
        ${where}

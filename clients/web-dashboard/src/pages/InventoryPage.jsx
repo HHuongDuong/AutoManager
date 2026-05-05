@@ -112,10 +112,8 @@ export default function InventoryPage() {
                   <div key={cat.id} className="list-item">
                     <div>
                       <h4>{cat.name}</h4>
-                      <p>{cat.id}</p>
                     </div>
                     <div className="row-actions">
-                      <strong>Nhóm</strong>
                       <button className="btn ghost" onClick={() => actions.handleDeleteInventoryCategory(cat.id)}>Xóa</button>
                     </div>
                   </div>
@@ -244,242 +242,242 @@ export default function InventoryPage() {
       {activeTab === 'stock' && (
         <>
           <div className="grid stock-grid full-row">
-          <div className="card">
-            <h3>Xuất kho nguyên liệu</h3>
-            <div className="form-grid">
-              <div className="form-row">
-                <label>Ingredient ID</label>
-                <select value={state.issueForm.ingredient_id} onChange={(e) => actions.setIssueForm({ ...state.issueForm, ingredient_id: e.target.value })}>
-                  <option value="">Chọn nguyên liệu</option>
-                  {state.ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>{ing.name}</option>
-                  ))}
-                </select>
+            <div className="card">
+              <h3>Xuất kho nguyên liệu</h3>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Ingredient ID</label>
+                  <select value={state.issueForm.ingredient_id} onChange={(e) => actions.setIssueForm({ ...state.issueForm, ingredient_id: e.target.value })}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {state.ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng</label>
+                  <input value={state.issueForm.quantity} onChange={(e) => actions.setIssueForm({ ...state.issueForm, quantity: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input value={state.issueForm.reason} onChange={(e) => actions.setIssueForm({ ...state.issueForm, reason: e.target.value })} />
+                </div>
               </div>
-              <div className="form-row">
-                <label>Số lượng</label>
-                <input value={state.issueForm.quantity} onChange={(e) => actions.setIssueForm({ ...state.issueForm, quantity: e.target.value })} />
-              </div>
-              <div className="form-row">
-                <label>Ly do</label>
-                <input value={state.issueForm.reason} onChange={(e) => actions.setIssueForm({ ...state.issueForm, reason: e.target.value })} />
-              </div>
-            </div>
-            <button className="btn primary" onClick={actions.handleCreateIssue}>Tạo phiếu xuất</button>
-            <div className="table">
-              <div className="table-row head">
-                <span>Nguyên liệu</span>
-                <span>Số lượng</span>
-                <span>Ngày</span>
-                <span></span>
-              </div>
-              {state.inventoryTx.filter(tx => tx.transaction_type === 'OUT').slice(0, 6).map(tx => (
-                <div key={tx.id} className="table-row">
-                  <span>{derived.ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
-                  <span>{tx.quantity}</span>
-                  <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+              <button className="btn primary" onClick={actions.handleCreateIssue}>Tạo phiếu xuất</button>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Số lượng</span>
+                  <span>Ngày</span>
                   <span></span>
                 </div>
-              ))}
-              {state.inventoryTx.filter(tx => tx.transaction_type === 'OUT').length === 0 && (
-                <div className="empty">Chưa có phiếu xuất kho.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="card">
-            <h3>Nhập kho nguyên liệu</h3>
-            <div className="form-grid">
-              <div className="form-row">
-                <label>Ingredient ID</label>
-                <select value={state.inputForm.ingredient_id} onChange={(e) => actions.setInputForm({ ...state.inputForm, ingredient_id: e.target.value })}>
-                  <option value="">Chọn nguyên liệu</option>
-                  {state.ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>{ing.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-row">
-                <label>Số lượng</label>
-                <input value={state.inputForm.quantity} onChange={(e) => actions.setInputForm({ ...state.inputForm, quantity: e.target.value })} />
-              </div>
-              <div className="form-row">
-                <label>Đơn giá</label>
-                <input
-                  value={formatThousands(state.inputForm.unit_cost)}
-                  onChange={(e) => actions.setInputForm({
-                    ...state.inputForm,
-                    unit_cost: e.target.value.replace(/\D/g, '')
-                  })}
-                />
-              </div>
-              <div className="form-row">
-                <label>Lý do</label>
-                <input value={state.inputForm.reason} onChange={(e) => actions.setInputForm({ ...state.inputForm, reason: e.target.value })} />
-              </div>
-            </div>
-            <button className="btn primary" onClick={actions.handleCreateInput}>Tạo phiếu nhập</button>
-          </div>
-
-          <div className="card">
-            <div className="card-head">
-              <h3>Phiếu kiểm kê</h3>
-              <span>{state.stocktakeItems.length} dòng</span>
-            </div>
-            <div className="form-grid">
-              <div className="form-row">
-                <label>Nguyên liệu</label>
-                <select value={state.selectedIngredient} onChange={(e) => actions.setSelectedIngredient(e.target.value)}>
-                  <option value="">Chọn nguyên liệu</option>
-                  {state.ingredients.map(ing => (
-                    <option key={ing.id} value={ing.id}>{ing.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-row">
-                <label>Số lượng thực tế</label>
-                <input value={state.actualQty} onChange={(e) => actions.setActualQty(e.target.value)} placeholder="0" />
-              </div>
-            </div>
-            <div className="actions">
-              <button className="btn ghost" onClick={actions.handleAddStocktakeItem}>Thêm dòng</button>
-            </div>
-            <div className="table">
-              <div className="table-row head">
-                <span>Nguyên liệu</span>
-                <span>Thực tế</span>
-                <span>Hành động</span>
-                <span></span>
-              </div>
-              {state.stocktakeItems.map(item => (
-                <div key={item.ingredient_id} className="table-row">
-                  <span>{item.name}</span>
-                  <span>{item.actual_qty}</span>
-                  <button className="btn ghost" onClick={() => actions.removeStocktakeItem(item.ingredient_id)}>Xóa</button>
-                  <span></span>
-                </div>
-              ))}
-              {state.stocktakeItems.length === 0 && <div className="empty">Chưa có dòng kiểm kê.</div>}
-            </div>
-            <div className="form-row">
-              <label>Ghi chú</label>
-              <input value={state.stocktakeNote} onChange={(e) => actions.setStocktakeNote(e.target.value)} placeholder="Ghi chú kiểm kê" />
-            </div>
-            <button className="btn primary" onClick={actions.handleCreateStocktake}>Tạo phiếu kiểm kê</button>
-          </div>
-
-          <div className="card">
-            <div className="card-head">
-              <h3>Danh sách kiểm kê</h3>
-              <span>{state.stocktakes.length} phiếu</span>
-            </div>
-            <div className="table">
-              <div className="table-row head">
-                <span>Mã phiếu</span>
-                <span>Trạng thái</span>
-                <span>Ngày</span>
-                <span>Hành động</span>
-              </div>
-              {state.stocktakes.slice(0, 8).map(item => (
-                <div key={item.id}>
-                  <div className="table-row">
-                    <span>{item.id}</span>
-                    <span>{item.status}</span>
-                    <span>{new Date(item.created_at).toLocaleDateString('vi-VN')}</span>
-                    <div className="row-actions">
-                      <button className="btn ghost" onClick={() => toggleStocktakeDetail(item.id)}>
-                        {expandedStocktakes[item.id] ? 'Ẩn' : 'Chi tiết'}
-                      </button>
-                      {item.status === 'DRAFT' ? (
-                        <button className="btn ghost" onClick={() => actions.handleApproveStocktake(item.id)}>Duyệt</button>
-                      ) : (
-                        <span className="muted-text">Đã duyệt</span>
-                      )}
-                    </div>
+                {state.inventoryTx.filter(tx => tx.transaction_type === 'OUT').slice(0, 6).map(tx => (
+                  <div key={tx.id} className="table-row">
+                    <span>{derived.ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
+                    <span>{tx.quantity}</span>
+                    <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+                    <span></span>
                   </div>
-                  {expandedStocktakes[item.id] && (
-                    <div className="stocktake-detail">
-                      <div className="stocktake-meta">
-                        <span>Ghi chú: {item.note || '---'}</span>
-                        <span>Nguyên liệu: {state.stocktakeItemsById[item.id]?.length ?? 0}</span>
+                ))}
+                {state.inventoryTx.filter(tx => tx.transaction_type === 'OUT').length === 0 && (
+                  <div className="empty">Chưa có phiếu xuất kho.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Nhập kho nguyên liệu</h3>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Ingredient ID</label>
+                  <select value={state.inputForm.ingredient_id} onChange={(e) => actions.setInputForm({ ...state.inputForm, ingredient_id: e.target.value })}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {state.ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng</label>
+                  <input value={state.inputForm.quantity} onChange={(e) => actions.setInputForm({ ...state.inputForm, quantity: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <label>Đơn giá</label>
+                  <input
+                    value={formatThousands(state.inputForm.unit_cost)}
+                    onChange={(e) => actions.setInputForm({
+                      ...state.inputForm,
+                      unit_cost: e.target.value.replace(/\D/g, '')
+                    })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Lý do</label>
+                  <input value={state.inputForm.reason} onChange={(e) => actions.setInputForm({ ...state.inputForm, reason: e.target.value })} />
+                </div>
+              </div>
+              <button className="btn primary" onClick={actions.handleCreateInput}>Tạo phiếu nhập</button>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Phiếu kiểm kê</h3>
+                <span>{state.stocktakeItems.length} dòng</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-row">
+                  <label>Nguyên liệu</label>
+                  <select value={state.selectedIngredient} onChange={(e) => actions.setSelectedIngredient(e.target.value)}>
+                    <option value="">Chọn nguyên liệu</option>
+                    {state.ingredients.map(ing => (
+                      <option key={ing.id} value={ing.id}>{ing.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <label>Số lượng thực tế</label>
+                  <input value={state.actualQty} onChange={(e) => actions.setActualQty(e.target.value)} placeholder="0" />
+                </div>
+              </div>
+              <div className="actions">
+                <button className="btn ghost" onClick={actions.handleAddStocktakeItem}>Thêm dòng</button>
+              </div>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Thực tế</span>
+                  <span>Hành động</span>
+                  <span></span>
+                </div>
+                {state.stocktakeItems.map(item => (
+                  <div key={item.ingredient_id} className="table-row">
+                    <span>{item.name}</span>
+                    <span>{item.actual_qty}</span>
+                    <button className="btn ghost" onClick={() => actions.removeStocktakeItem(item.ingredient_id)}>Xóa</button>
+                    <span></span>
+                  </div>
+                ))}
+                {state.stocktakeItems.length === 0 && <div className="empty">Chưa có dòng kiểm kê.</div>}
+              </div>
+              <div className="form-row">
+                <label>Ghi chú</label>
+                <input value={state.stocktakeNote} onChange={(e) => actions.setStocktakeNote(e.target.value)} placeholder="Ghi chú kiểm kê" />
+              </div>
+              <button className="btn primary" onClick={actions.handleCreateStocktake}>Tạo phiếu kiểm kê</button>
+            </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Danh sách kiểm kê</h3>
+                <span>{state.stocktakes.length} phiếu</span>
+              </div>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Mã phiếu</span>
+                  <span>Trạng thái</span>
+                  <span>Ngày</span>
+                  <span>Hành động</span>
+                </div>
+                {state.stocktakes.slice(0, 8).map(item => (
+                  <div key={item.id}>
+                    <div className="table-row">
+                      <span>{item.id}</span>
+                      <span>{item.status}</span>
+                      <span>{new Date(item.created_at).toLocaleDateString('vi-VN')}</span>
+                      <div className="row-actions">
+                        <button className="btn ghost" onClick={() => toggleStocktakeDetail(item.id)}>
+                          {expandedStocktakes[item.id] ? 'Ẩn' : 'Chi tiết'}
+                        </button>
+                        {item.status === 'DRAFT' ? (
+                          <button className="btn ghost" onClick={() => actions.handleApproveStocktake(item.id)}>Duyệt</button>
+                        ) : (
+                          <span className="muted-text">Đã duyệt</span>
+                        )}
                       </div>
-                      {state.stocktakeItemLoading[item.id] && (
-                        <div className="muted-text">Đang tải chi tiết...</div>
-                      )}
-                      {!state.stocktakeItemLoading[item.id] && (
-                        <div className="table stocktake-items">
-                          <div className="table-row head">
-                            <span>Nguyên liệu</span>
-                            <span>Hệ thống</span>
-                            <span>Thực tế</span>
-                            <span>Chênh lệch</span>
-                          </div>
-                          {(state.stocktakeItemsById[item.id] || []).map(row => (
-                            <div key={row.id} className="table-row">
-                              <span>{row.ingredient_name || row.ingredient_id}</span>
-                              <span>{row.system_qty}</span>
-                              <span>{row.actual_qty}</span>
-                              <span>{row.delta_qty}</span>
-                            </div>
-                          ))}
-                          {(state.stocktakeItemsById[item.id] || []).length === 0 && (
-                            <div className="empty">Chưa có dòng kiểm kê.</div>
-                          )}
-                        </div>
-                      )}
                     </div>
-                  )}
-                </div>
-              ))}
-              {state.stocktakes.length === 0 && <div className="empty">Chưa có phiếu kiểm kê.</div>}
-            </div>
-          </div>
-
-          <div className="card">
-            <h3>Danh sách nhập kho</h3>
-            <div className="table">
-              <div className="table-row head">
-                <span>Nguyên liệu</span>
-                <span>Số lượng</span>
-                <span>Đơn giá</span>
-                <span>Tổng</span>
+                    {expandedStocktakes[item.id] && (
+                      <div className="stocktake-detail">
+                        <div className="stocktake-meta">
+                          <span>Ghi chú: {item.note || '---'}</span>
+                          <span>Nguyên liệu: {state.stocktakeItemsById[item.id]?.length ?? 0}</span>
+                        </div>
+                        {state.stocktakeItemLoading[item.id] && (
+                          <div className="muted-text">Đang tải chi tiết...</div>
+                        )}
+                        {!state.stocktakeItemLoading[item.id] && (
+                          <div className="table stocktake-items">
+                            <div className="table-row head">
+                              <span>Nguyên liệu</span>
+                              <span>Hệ thống</span>
+                              <span>Thực tế</span>
+                              <span>Chênh lệch</span>
+                            </div>
+                            {(state.stocktakeItemsById[item.id] || []).map(row => (
+                              <div key={row.id} className="table-row">
+                                <span>{row.ingredient_name || row.ingredient_id}</span>
+                                <span>{row.system_qty}</span>
+                                <span>{row.actual_qty}</span>
+                                <span>{row.delta_qty}</span>
+                              </div>
+                            ))}
+                            {(state.stocktakeItemsById[item.id] || []).length === 0 && (
+                              <div className="empty">Chưa có dòng kiểm kê.</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {state.stocktakes.length === 0 && <div className="empty">Chưa có phiếu kiểm kê.</div>}
               </div>
-              {state.inventoryInputs.slice(0, 10).map(input => (
-                <div key={input.id} className="table-row">
-                  <span>{derived.ingredientMap.get(input.ingredient_id) || input.ingredient_id}</span>
-                  <span>{input.quantity}</span>
-                  <span>{formatVnd(input.unit_cost || 0)}</span>
-                  <strong>{formatVnd(input.total_cost || 0)}</strong>
-                </div>
-              ))}
-              {state.inventoryInputs.length === 0 && <div className="empty">Chưa có phiếu nhập kho.</div>}
             </div>
-          </div>
 
-          <div className="card">
-            <div className="card-head">
-              <h3>Giao dịch kho gần đây</h3>
-            </div>
-            <div className="table">
-              <div className="table-row head">
-                <span>Nguyên liệu</span>
-                <span>Loại</span>
-                <span>Số lượng</span>
-                <span>Ngày</span>
-              </div>
-              {state.inventoryTx.slice(0, 8).map(tx => (
-                <div key={tx.id} className="table-row">
-                  <span>{derived.ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
-                  <span>{tx.transaction_type}</span>
-                  <span>{tx.quantity}</span>
-                  <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+            <div className="card">
+              <h3>Danh sách nhập kho</h3>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Số lượng</span>
+                  <span>Đơn giá</span>
+                  <span>Tổng</span>
                 </div>
-              ))}
-              {state.inventoryTx.length === 0 && (
-                <div className="empty">Chưa có giao dịch kho.</div>
-              )}
+                {state.inventoryInputs.slice(0, 10).map(input => (
+                  <div key={input.id} className="table-row">
+                    <span>{derived.ingredientMap.get(input.ingredient_id) || input.ingredient_id}</span>
+                    <span>{input.quantity}</span>
+                    <span>{formatVnd(input.unit_cost || 0)}</span>
+                    <strong>{formatVnd(input.total_cost || 0)}</strong>
+                  </div>
+                ))}
+                {state.inventoryInputs.length === 0 && <div className="empty">Chưa có phiếu nhập kho.</div>}
+              </div>
             </div>
-          </div>
+
+            <div className="card">
+              <div className="card-head">
+                <h3>Giao dịch kho gần đây</h3>
+              </div>
+              <div className="table">
+                <div className="table-row head">
+                  <span>Nguyên liệu</span>
+                  <span>Loại</span>
+                  <span>Số lượng</span>
+                  <span>Ngày</span>
+                </div>
+                {state.inventoryTx.slice(0, 8).map(tx => (
+                  <div key={tx.id} className="table-row">
+                    <span>{derived.ingredientMap.get(tx.ingredient_id) || tx.ingredient_id}</span>
+                    <span>{tx.transaction_type}</span>
+                    <span>{tx.quantity}</span>
+                    <span>{new Date(tx.created_at).toLocaleDateString('vi-VN')}</span>
+                  </div>
+                ))}
+                {state.inventoryTx.length === 0 && (
+                  <div className="empty">Chưa có giao dịch kho.</div>
+                )}
+              </div>
+            </div>
           </div>
         </>
       )}

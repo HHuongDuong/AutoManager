@@ -60,7 +60,7 @@ export default function SalesPage() {
         });
         if (active) setOrderItems(items);
       } catch {
-        if (active) setItemsError('Khong the tai chi tiet don hang.');
+        if (active) setItemsError('Không thể tải chi tiết đơn hàng.');
       } finally {
         if (active) setItemsLoading(false);
       }
@@ -90,7 +90,7 @@ export default function SalesPage() {
     const map = new Map();
     state.orders.forEach(order => {
       if ((order.payment_status || order.order_status) !== 'PAID') return;
-      const branchLabel = derived.branchNameMap.get(order.branch_id) || order.branch_id || 'Khong ro';
+      const branchLabel = derived.branchNameMap.get(order.branch_id) || order.branch_id || 'Không rõ';
       const total = Number(order.total_amount || 0);
       map.set(branchLabel, (map.get(branchLabel) || 0) + total);
     });
@@ -108,7 +108,7 @@ export default function SalesPage() {
     const map = new Map();
     orderItems.forEach(item => {
       if (!paidOrderIds.has(item.order_id)) return;
-      const label = item.name || item.product_id || 'Khong ro';
+      const label = item.name || item.product_id || 'Không rõ';
       const total = Number(item.subtotal || 0);
       map.set(label, (map.get(label) || 0) + total);
     });
@@ -126,7 +126,7 @@ export default function SalesPage() {
     <section className="grid sales-grid">
       <div className="card full-row">
         <div className="card-head">
-          <h3>Doanh thu theo ngày(Tất cả các chi nhánh)</h3>
+          <h3>Doanh thu theo ngày (Tất cả các chi nhánh)</h3>
           <span>{revenueByDay.length} ngày có doanh thu</span>
         </div>
         <div className="chart-wrapper">

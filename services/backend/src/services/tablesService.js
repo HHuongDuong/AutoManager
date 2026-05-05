@@ -4,7 +4,25 @@ module.exports = function createTablesService(deps) {
   async function listTables(filter) {
     const { branchFilter } = filter;
     const { where, params } = branchFilter || { where: '', params: [] };
-    const result = await db.query(`SELECT id, branch_id, name, status FROM tables ${where} ORDER BY name`, params);
+    const result = await db.query(
+      `SELECT t.id,
+              t.branch_id,
+              t.name,
+              CASE
+                WHEN EXISTS (
+                  SELECT 1
+                  FROM orders o
+                  WHERE o.table_id = t.id
+                    AND o.order_type = 'DINE_IN'
+                    AND o.order_status NOT IN ('CANCELLED', 'CLOSED')
+                ) THEN 'OCCUPIED'
+                ELSE COALESCE(t.status, 'AVAILABLE')
+              END AS status
+       FROM tables t
+       ${where}
+       ORDER BY t.name`,
+      params
+    );
     return result.rows;
   }
 

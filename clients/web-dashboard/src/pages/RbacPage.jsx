@@ -24,7 +24,7 @@ export default function RbacPage() {
         </div>
         <div className="form-row">
           <label>Tên role</label>
-          <input value={state.newRoleName} onChange={(e) => actions.setNewRoleName(e.target.value)} placeholder="VD: Thu ngan" />
+          <input value={state.newRoleName} onChange={(e) => actions.setNewRoleName(e.target.value)} placeholder="VD: Thu ngân" />
         </div>
         <button className="btn primary" onClick={actions.handleCreateRole}>Tạo role</button>
         <div className="list">

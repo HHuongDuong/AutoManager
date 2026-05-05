@@ -3,6 +3,9 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 module.exports = function createInventoryService(deps) {
   const { db, randomUUID, getIngredientBranchOnHand, getIngredientOnHandByBranchIds } = deps;
+  const REORDER_LOOKBACK_DAYS = 3;
+  const REORDER_MIN_COVERAGE_DAYS = 7;
+  const REORDER_TARGET_COVERAGE_DAYS = 10;
 
   function getAiEndpoint() {
     if (!GEMINI_API_KEY) return null;
@@ -90,7 +93,43 @@ module.exports = function createInventoryService(deps) {
     }
   }
 
+  function buildDeterministicSuggestions(items = []) {
+    return items
+      .filter(item => item.avg_daily > 0 && item.coverage_days < REORDER_MIN_COVERAGE_DAYS)
+      .map(item => {
+        const targetStock = item.avg_daily * REORDER_TARGET_COVERAGE_DAYS;
+        const reorderQty = Math.max(
+          Math.ceil(item.avg_daily),
+          Math.ceil(targetStock - item.on_hand)
+        );
+        return {
+          ingredient_id: item.ingredient_id,
+          name: item.name,
+          unit: item.unit || null,
+          on_hand: item.on_hand,
+          avg_daily: item.avg_daily,
+          coverage_days: item.coverage_days,
+          reorder_qty: reorderQty,
+          reason: `Ton kho con ${item.coverage_days.toFixed(1)} ngay, thap hon muc an toan ${REORDER_MIN_COVERAGE_DAYS} ngay.`
+        };
+      })
+      .sort((a, b) => a.coverage_days - b.coverage_days || b.avg_daily - a.avg_daily)
+      .slice(0, 12);
+  }
+
   async function getRecentIngredientUsage(branchId) {
+    const latestRes = await db.query(
+      `SELECT MAX(created_at) AS latest_at
+       FROM inventory_transactions
+       WHERE branch_id = $1
+         AND transaction_type = 'OUT'`,
+      [branchId]
+    );
+    const latestAt = latestRes.rows[0]?.latest_at || null;
+    if (!latestAt) {
+      return { usage: [], latest_at: null };
+    }
+
     const result = await db.query(
       `SELECT it.ingredient_id,
               i.name,
@@ -99,52 +138,88 @@ module.exports = function createInventoryService(deps) {
        FROM inventory_transactions it
        JOIN ingredients i ON i.id = it.ingredient_id
        WHERE it.branch_id = $1
-         AND it.created_at >= now() - interval '3 days'
+         AND it.transaction_type = 'OUT'
+         AND it.created_at >= $2::timestamptz - ($3::int * interval '1 day')
+         AND it.created_at <= $2::timestamptz
        GROUP BY it.ingredient_id, i.name, i.unit
        ORDER BY total_out DESC` ,
-      [branchId]
+      [branchId, latestAt, REORDER_LOOKBACK_DAYS]
     );
-    return result.rows.map(row => ({
-      ingredient_id: row.ingredient_id,
-      name: row.name,
-      unit: row.unit,
-      total_out: Number(row.total_out || 0)
-    }));
+    return {
+      latest_at: latestAt,
+      usage: result.rows.map(row => ({
+        ingredient_id: row.ingredient_id,
+        name: row.name,
+        unit: row.unit,
+        total_out: Number(row.total_out || 0)
+      }))
+    };
   }
 
   async function suggestReorderNextDay(payload) {
     const { branch_id } = payload;
     if (!branch_id) return { error: 'branch_required' };
-    const usage = await getRecentIngredientUsage(branch_id);
-    if (!usage.length) return { branch_id, suggestions: [] };
+    const usageWindow = await getRecentIngredientUsage(branch_id);
+    const usage = usageWindow.usage || [];
+    if (!usage.length) {
+      return {
+        branch_id,
+        usage_window_days: REORDER_LOOKBACK_DAYS,
+        usage_window_end: usageWindow.latest_at,
+        method: 'no_usage',
+        suggestions: []
+      };
+    }
     const ingredientIds = usage.map(u => u.ingredient_id);
     const onHandMap = await getIngredientBranchOnHand(branch_id, ingredientIds);
     const items = usage.map(row => {
       const onHand = Number(onHandMap.get(row.ingredient_id) ?? 0);
       const avgDaily = Number((row.total_out / 3).toFixed(2));
+      const coverageDays = avgDaily > 0
+        ? Number((onHand / avgDaily).toFixed(2))
+        : null;
       return {
         ingredient_id: row.ingredient_id,
         name: row.name,
         unit: row.unit || null,
         on_hand: onHand,
         total_out_3d: row.total_out,
-        avg_daily: avgDaily
+        avg_daily: avgDaily,
+        coverage_days: coverageDays
       };
     });
+    const fallbackSuggestions = buildDeterministicSuggestions(items);
 
     const prompt = [
       'You are an inventory planning service. Return ONLY valid JSON.',
       'Task: Recommend which ingredients should be reordered for tomorrow and how much.',
-      'Use avg_daily as the expected usage for tomorrow. If on_hand < avg_daily, reorder_qty should cover the shortfall (rounded up).',
+      `Use avg_daily as the expected usage for tomorrow and coverage_days = on_hand / avg_daily.`,
+      `Prioritize ingredients with coverage_days below ${REORDER_MIN_COVERAGE_DAYS}.`,
+      `For reorder_qty, aim to bring stock back toward ${REORDER_TARGET_COVERAGE_DAYS} days of coverage, rounded up.`,
       'Input JSON:',
       JSON.stringify({ branch_id, items }),
       'Output JSON schema:',
-      '{"branch_id":"uuid","suggestions":[{"ingredient_id":"id","name":"","unit":"","on_hand":0,"avg_daily":0,"reorder_qty":0,"reason":""}]}'
+      '{"branch_id":"uuid","suggestions":[{"ingredient_id":"id","name":"","unit":"","on_hand":0,"avg_daily":0,"coverage_days":0,"reorder_qty":0,"reason":""}]}'
     ].join('\n');
 
     const result = await callGemini(prompt);
-    if (result?.error) return result;
-    return result;
+    if (result?.error === 'ai_not_configured' || result?.error === 'ai_provider_error' || result?.error === 'ai_invalid_response') {
+      return {
+        branch_id,
+        usage_window_days: REORDER_LOOKBACK_DAYS,
+        usage_window_end: usageWindow.latest_at,
+        method: 'deterministic_fallback',
+        suggestions: fallbackSuggestions
+      };
+    }
+    const suggestions = Array.isArray(result?.suggestions) ? result.suggestions : [];
+    return {
+      branch_id,
+      usage_window_days: REORDER_LOOKBACK_DAYS,
+      usage_window_end: usageWindow.latest_at,
+      method: suggestions.length ? 'ai' : 'deterministic_fallback',
+      suggestions: suggestions.length ? suggestions : fallbackSuggestions
+    };
   }
 
   async function listCategories() {

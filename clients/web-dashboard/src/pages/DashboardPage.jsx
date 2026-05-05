@@ -10,7 +10,7 @@ export default function DashboardPage() {
   return (
     <>
       <section className="metrics">
-        <MetricCard title="Doanh thu hôm nay" value={formatVnd(totalRevenueToday)} subtitle="So voi hom qua" />
+        <MetricCard title="Doanh thu hôm nay" value={formatVnd(totalRevenueToday)} subtitle="So với hôm qua" />
         <MetricCard title="Đơn hàng" value={orderCount} subtitle="Trong khoảng lọc" />
         <MetricCard title="Trạng thái hệ thống" value={state.loading ? 'Đang đồng bộ' : state.token ? 'Đã kết nối' : 'Chưa đăng nhập'} subtitle={state.apiBase} />
       </section>

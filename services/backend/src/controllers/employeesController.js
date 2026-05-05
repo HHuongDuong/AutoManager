@@ -40,9 +40,18 @@ module.exports = function createEmployeesController(deps) {
   async function updateEmployee(req, res) {
     try {
       const { full_name, phone, position, branch_id } = req.body || {};
-      if (branch_id && !(await ensureBranchAccess(req, branch_id))) return res.status(403).json({ error: 'branch_forbidden' });
+      const current = await employeesService.getEmployeeById(req.params.id);
+      if (!current) return res.status(404).json({ error: 'not_found' });
+
+      if (current.branch_id && !(await ensureBranchAccess(req, current.branch_id))) {
+        return res.status(403).json({ error: 'branch_forbidden' });
+      }
+      if (branch_id && !(await ensureBranchAccess(req, branch_id))) {
+        return res.status(403).json({ error: 'branch_forbidden' });
+      }
+
       const result = await employeesService.updateEmployee(req.params.id, { full_name, phone, position, branch_id });
-      if (!result) return res.status(404).json({ error: 'not_found' });
+      if (result?.error === 'branch_not_found') return res.status(400).json({ error: 'branch_not_found' });
       await writeAuditLog(req, 'EMPLOYEE_UPDATE', 'employee', req.params.id, req.body);
       publishRealtime('employee.updated', result, result.branch_id || null);
       return res.json(result);

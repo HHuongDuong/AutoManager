@@ -209,6 +209,29 @@ export const styles = StyleSheet.create({
   productList: {
     gap: 10
   },
+  productGridList: {
+    maxHeight: 420
+  },
+  productGridRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10
+  },
+  productGridItem: {
+    width: '48%'
+  },
+  productGridCard: {
+    height: 120,
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  productGridMeta: {
+    gap: 6
+  },
   productCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -283,6 +306,111 @@ export const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0'
+  },
+  modalSheet: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 20,
+    gap: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    maxHeight: '88%'
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12
+  },
+  modalTitleBlock: {
+    flex: 1,
+    gap: 4
+  },
+  modalSubtitle: {
+    color: '#64748b',
+    lineHeight: 20
+  },
+  modalScroll: {
+    flexGrow: 0
+  },
+  modalScrollContent: {
+    gap: 14
+  },
+  modalSection: {
+    gap: 6
+  },
+  modalInfoCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  modalInfoTitle: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  modalInfoValue: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  modalNote: {
+    color: '#475569',
+    lineHeight: 20
+  },
+  modalStatus: {
+    color: '#2563eb',
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#bfdbfe'
+  },
+  modalActionsStack: {
+    gap: 10
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    gap: 12
+  },
+  branchOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: '#ffffff',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
+  },
+  branchOptionCardSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#eff6ff'
+  },
+  branchOptionMeta: {
+    flex: 1,
+    gap: 4
+  },
+  branchOptionTitle: {
+    color: '#0f172a',
+    fontWeight: '700'
+  },
+  branchOptionSubtitle: {
+    color: '#64748b',
+    fontSize: 12
+  },
+  branchOptionBadge: {
+    color: '#2563eb',
+    fontWeight: '700',
+    fontSize: 12
+  },
+  branchOptionBadgeSelected: {
+    color: '#1d4ed8'
   },
   modalCloseBtn: {
     width: 28,

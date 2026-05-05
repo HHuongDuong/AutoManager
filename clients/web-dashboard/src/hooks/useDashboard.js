@@ -287,7 +287,12 @@ export default function useDashboard() {
 
   const assignUserBranchAccess = async (userId, nextBranchId) => {
     if (!token || !userId || !nextBranchId) return;
-    await api.assignUserBranch(userId, { branch_id: nextBranchId });
+    try {
+      await api.assignUserBranch(userId, { branch_id: nextBranchId });
+    } catch (err) {
+      if (err?.status === 409 && err?.payload?.error === 'user_branch_exists') return;
+      throw err;
+    }
   };
 
   const handleSaveEmployee = async () => {
@@ -324,7 +329,15 @@ export default function useDashboard() {
       }
       resetEmployeeForm();
       refreshEmployees();
-    } catch {
+    } catch (err) {
+      if (err?.payload?.error === 'branch_forbidden') {
+        setStatusMessage('Khong co quyen gan nhan vien vao chi nhanh nay.');
+        return;
+      }
+      if (err?.payload?.error === 'branch_not_found') {
+        setStatusMessage('Chi nhanh da chon khong ton tai.');
+        return;
+      }
       setStatusMessage('Khong the luu nhan vien.');
     }
   };

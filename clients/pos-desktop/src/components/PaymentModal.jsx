@@ -14,6 +14,17 @@ export default function PaymentModal({
 }) {
   if (!show) return null;
 
+  const formatThousands = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits || digits === '0') return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  };
+
+  const handleCashChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, '');
+    onCashReceivedChange(raw === '' ? 0 : Number(raw));
+  };
+
   return (
     <section className="modal">
       <div className="modal-card">
@@ -27,7 +38,13 @@ export default function PaymentModal({
             <h3>{formatVnd(total)}</h3>
             <div className="form-row">
               <label>Khách đưa</label>
-              <input type="number" value={cashReceived} onChange={(e) => onCashReceivedChange(e.target.value)} />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={formatThousands(cashReceived)}
+                onChange={handleCashChange}
+                placeholder="0"
+              />
             </div>
             <div className="form-row">
               <label>Tiền thừa</label>
@@ -61,3 +78,4 @@ export default function PaymentModal({
     </section>
   );
 }
+

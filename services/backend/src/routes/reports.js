@@ -17,8 +17,8 @@ module.exports = function createReportsRouter(deps) {
   router.get('/reports/inventory', authenticate, requirePermission('REPORT_VIEW'), branchFilter(), controller.listInventory);
   router.get('/reports/inventory/export', authenticate, requirePermission('REPORT_VIEW'), branchFilter(), controller.exportInventory);
 
-  router.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), branchFilter({ column: 'e.branch_id' }), controller.listAttendance);
-  router.get('/reports/attendance/export', authenticate, requirePermission('REPORT_VIEW'), branchFilter({ column: 'e.branch_id' }), controller.exportAttendance);
+  router.get('/reports/attendance', authenticate, requirePermission('REPORT_VIEW'), branchFilter({ column: 'a.branch_id' }), controller.listAttendance);
+  router.get('/reports/attendance/export', authenticate, requirePermission('REPORT_VIEW'), branchFilter({ column: 'a.branch_id' }), controller.exportAttendance);
 
   return router;
 };

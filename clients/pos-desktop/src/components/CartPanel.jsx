@@ -76,13 +76,14 @@ export default function CartPanel({
         </div>
         <div>
           <span>Giảm giá</span>
-          <strong>{formatVnd(0)}</strong>
+          <strong style={{ color: 'var(--muted)' }}>{formatVnd(0)}</strong>
         </div>
         <div className="total">
           <span>Tổng cộng</span>
           <strong>{formatVnd(total)}</strong>
         </div>
       </div>
+
       <div className="cart-actions">
         <button className="btn ghost" onClick={onSyncQueue}>Đồng bộ ({queuePendingCount})</button>
         <button className="btn ghost" onClick={onShowInputModal}>Nhập kho</button>
@@ -98,7 +99,6 @@ export default function CartPanel({
             <div key={order.id} className="cart-item">
               <div>
                 <h4>{tableNameMap[order.table_id] || order.table_id || 'Bàn chưa chọn'}</h4>
-                <span>Đơn: {order.id}</span>
                 <span>{new Date(order.created_at).toLocaleString('vi-VN')}</span>
               </div>
               <button className="btn ghost" onClick={() => onLoadOrder(order.id)}>Mở</button>

@@ -55,7 +55,7 @@ export default function EmployeePage() {
         <div className="form-grid">
           <div className="form-row">
             <label>Tên ca</label>
-            <input value={state.shiftForm.name} onChange={(e) => actions.setShiftForm({ ...state.shiftForm, name: e.target.value })} placeholder="Ca sang" />
+            <input value={state.shiftForm.name} onChange={(e) => actions.setShiftForm({ ...state.shiftForm, name: e.target.value })} placeholder="Ca sáng" />
           </div>
           <div className="form-row">
             <label>Giờ bắt đầu</label>
@@ -94,7 +94,7 @@ export default function EmployeePage() {
         <div className="form-grid">
           <div className="form-row">
             <label>Họ tên</label>
-            <input value={state.employeeForm.full_name} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, full_name: e.target.value })} placeholder="Nguyen Van A" />
+            <input value={state.employeeForm.full_name} onChange={(e) => actions.setEmployeeForm({ ...state.employeeForm, full_name: e.target.value })} placeholder="Nguyễn Văn A" />
           </div>
           <div className="form-row">
             <label>Số điện thoại</label>
@@ -108,7 +108,7 @@ export default function EmployeePage() {
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </select>
-            {!state.branches.length && <small className="hint">Can tai danh sach chi nhanh truoc.</small>}
+            {!state.branches.length && <small className="hint">Cần tải danh sách chi nhánh trước.</small>}
           </div>
           <div className="form-row">
             <label>Tài khoản</label>
@@ -131,7 +131,7 @@ export default function EmployeePage() {
 
       <div className="card full-row">
         <div className="card-head">
-          <h3>Danh sach nhan vien</h3>
+          <h3>Danh sách nhân viên</h3>
           <button className="btn ghost" onClick={actions.refreshEmployees}>Làm mới</button>
         </div>
         <div className="table-toolbar">

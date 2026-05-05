@@ -285,6 +285,7 @@ export default function usePos() {
     try {
       const data = await api.getOrder(orderId);
       setCurrentOrderId(data.id);
+      setSelectedTableId(data.table_id || '');
       setCart((data.items || []).map(item => ({
         id: item.id,
         product_id: item.product_id,
@@ -328,7 +329,7 @@ export default function usePos() {
         }
         if (msg.event?.startsWith('order.') || msg.event?.startsWith('table.')) {
           fetchOpenOrders();
-          if (msg.event?.startsWith('table.')) refreshTables();
+          refreshTables();
           setStatusMessage(`Realtime: ${msg.event}`);
         }
       } catch {
@@ -454,6 +455,7 @@ export default function usePos() {
         setShowPayment(false);
         setStatusMessage(`Da thanh toan: ${currentOrderId}`);
         fetchOpenOrders();
+        refreshTables();
       } catch {
         setStatusMessage('Khong the thanh toan phieu.');
       }
@@ -493,7 +495,18 @@ export default function usePos() {
         setStatusMessage(`Da luu phieu: ${data.id}`);
       }
       fetchOpenOrders();
-    } catch {
+      refreshTables();
+    } catch (err) {
+      if (err?.status) {
+        if (err.status === 409) {
+          setStatusMessage('Ban nay dang co phieu mo. Hay chon ban khac hoac mo phieu hien tai.');
+        } else {
+          setStatusMessage('Khong the tao don ngay bay gio.');
+        }
+        fetchOpenOrders();
+        refreshTables();
+        return;
+      }
       enqueueOrder(payload);
       clearOrder();
       setShowPayment(false);
@@ -509,6 +522,7 @@ export default function usePos() {
       if (currentOrderId === orderId) clearOrder();
       setStatusMessage('Da xoa phieu.');
       fetchOpenOrders();
+      refreshTables();
     } catch {
       setStatusMessage('Khong the xoa phieu.');
     }

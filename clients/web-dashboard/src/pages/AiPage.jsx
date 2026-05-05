@@ -33,7 +33,7 @@ export default function AiPage() {
             <div key={item.ingredient_id} className="list-item">
               <div>
                 <h4>{item.name || item.ingredient_id}</h4>
-                <p>Ton: {item.on_hand} / TB ngay: {item.avg_daily}</p>
+                <p>Tồn: {item.on_hand} / TB ngày: {item.avg_daily}</p>
                 {item.reason ? <p>{item.reason}</p> : null}
               </div>
               <strong>{item.reorder_qty} {item.unit || ''}</strong>

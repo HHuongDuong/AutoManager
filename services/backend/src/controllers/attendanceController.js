@@ -29,24 +29,28 @@ module.exports = function createAttendanceController(deps) {
       shift_id,
       latitude,
       longitude,
-      branch_id: req.resourceBranchId,
+      branch_id: req.branchId,
       createdBy: req.user.sub
     });
     if (result?.error === 'branch_location_missing') return res.status(400).json({ error: 'branch_location_missing' });
     if (result?.error === 'too_far') {
       return res.status(400).json({ error: 'too_far', distance_m: result.distance_m, max_distance_m: result.max_distance_m });
     }
+    if (result?.error === 'employee_not_found') return res.status(404).json({ error: 'employee_not_found' });
     if (result?.error === 'shift_not_found') return res.status(404).json({ error: 'shift_not_found' });
-    if (result?.error === 'already_checked_in') return res.status(409).json({ error: 'already_checked_in' });
+    if (result?.error === 'already_checked_in') {
+      return res.status(409).json({ error: 'already_checked_in', open_branch_id: result.open_branch_id || null });
+    }
 
     await writeAuditLog(req, 'ATTENDANCE_CHECKIN', 'attendance', result.record.id, {
       employee_id,
       shift_id,
+      branch_id: req.branchId,
       distance_m: result.distance_m,
       check_in_status: result.checkStatus.status,
       check_in_diff_minutes: result.checkStatus.diff_minutes
     });
-    publishRealtime('attendance.checkin', result.record, req.resourceBranchId);
+    publishRealtime('attendance.checkin', result.record, req.branchId);
     return res.status(201).json({
       ...result.record,
       distance_m: result.distance_m,
@@ -64,22 +68,27 @@ module.exports = function createAttendanceController(deps) {
       employee_id,
       latitude,
       longitude,
-      branch_id: req.resourceBranchId,
+      branch_id: req.branchId,
       createdBy: req.user.sub
     });
     if (result?.error === 'branch_location_missing') return res.status(400).json({ error: 'branch_location_missing' });
     if (result?.error === 'too_far') {
       return res.status(400).json({ error: 'too_far', distance_m: result.distance_m, max_distance_m: result.max_distance_m });
     }
+    if (result?.error === 'employee_not_found') return res.status(404).json({ error: 'employee_not_found' });
+    if (result?.error === 'checked_in_other_branch') {
+      return res.status(409).json({ error: 'checked_in_other_branch', open_branch_id: result.open_branch_id || null });
+    }
     if (result?.error === 'not_checked_in') return res.status(409).json({ error: 'not_checked_in' });
 
     await writeAuditLog(req, 'ATTENDANCE_CHECKOUT', 'attendance', result.record.id, {
       employee_id,
+      branch_id: req.branchId,
       distance_m: result.distance_m,
       check_out_status: result.checkOutStatus?.status || null,
       check_out_diff_minutes: result.checkOutStatus?.diff_minutes ?? null
     });
-    publishRealtime('attendance.checkout', result.record, req.resourceBranchId);
+    publishRealtime('attendance.checkout', result.record, req.branchId);
     return res.json({
       ...result.record,
       distance_m: result.distance_m,

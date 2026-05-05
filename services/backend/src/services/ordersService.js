@@ -4,6 +4,22 @@ module.exports = function createOrdersService(deps) {
     randomUUID
   } = deps;
 
+  async function syncTableAvailability(client, tableId) {
+    if (!tableId) return;
+    const activeOrderRes = await client.query(
+      `SELECT 1
+       FROM orders
+       WHERE table_id = $1
+         AND order_type = 'DINE_IN'
+         AND order_status NOT IN ('CANCELLED', 'CLOSED')
+       LIMIT 1`,
+      [tableId]
+    );
+    const nextStatus = activeOrderRes.rows.length > 0 ? 'OCCUPIED' : 'AVAILABLE';
+    await client.query('UPDATE tables SET status = $2 WHERE id = $1', [tableId, nextStatus]);
+    return nextStatus;
+  }
+
   async function updateOrderTotal(client, orderId) {
     const result = await client.query('SELECT COALESCE(SUM(subtotal), 0) AS total FROM order_items WHERE order_id = $1', [orderId]);
     const total = Number(result.rows[0].total || 0);
@@ -59,6 +75,36 @@ module.exports = function createOrdersService(deps) {
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
+      if (order_type === 'DINE_IN' && table_id) {
+        const tableRes = await client.query(
+          'SELECT id, branch_id FROM tables WHERE id = $1 FOR UPDATE',
+          [table_id]
+        );
+        if (tableRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return { error: 'table_not_found' };
+        }
+        if (tableRes.rows[0].branch_id !== branch_id) {
+          await client.query('ROLLBACK');
+          return { error: 'table_branch_mismatch' };
+        }
+
+        const conflictRes = await client.query(
+          `SELECT id
+           FROM orders
+           WHERE table_id = $1
+             AND branch_id = $2
+             AND order_type = 'DINE_IN'
+             AND order_status NOT IN ('CANCELLED', 'CLOSED')
+           LIMIT 1`,
+          [table_id, branch_id]
+        );
+        if (conflictRes.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return { error: 'table_occupied', open_order_id: conflictRes.rows[0].id };
+        }
+      }
+
       const orderId = randomUUID();
       const total = computeTotal(items);
       const paidAmount = Array.isArray(payments)
@@ -66,12 +112,13 @@ module.exports = function createOrdersService(deps) {
         : 0;
       const paymentStatus = paidAmount >= total && total > 0 ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'UNPAID';
       const orderStatus = paymentStatus === 'PAID' ? 'PAID' : 'OPEN';
+      let tableStatus = null;
       await client.query(
         'INSERT INTO orders (id, branch_id, client_id, created_by, order_type, table_id, total_amount, payment_status, order_status, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
         [orderId, branch_id, client_id || null, created_by, order_type, table_id || null, total, paymentStatus, orderStatus, metadata || null]
       );
       if (order_type === 'DINE_IN' && table_id) {
-        await client.query("UPDATE tables SET status = 'OCCUPIED' WHERE id = $1", [table_id]);
+        tableStatus = await syncTableAvailability(client, table_id);
       }
 
       for (const item of items) {
@@ -105,7 +152,7 @@ module.exports = function createOrdersService(deps) {
       }
 
       await client.query('COMMIT');
-      return { orderId, paymentStatus, paymentIds, total };
+      return { orderId, paymentStatus, paymentIds, total, tableId: table_id || null, tableStatus };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -128,16 +175,37 @@ module.exports = function createOrdersService(deps) {
   }
 
   async function cancelOrder(orderId) {
-    const orderRes = await db.query('SELECT branch_id, payment_status, table_id, order_status FROM orders WHERE id = $1', [orderId]);
-    const order = orderRes.rows[0] || null;
-    if (!order) return { error: 'not_found' };
-    if (order.payment_status === 'PAID') return { error: 'already_paid' };
-    if (order.order_status === 'CANCELLED') return { error: 'already_cancelled' };
-    await db.query('UPDATE orders SET order_status = $2, updated_at = now() WHERE id = $1', [orderId, 'CANCELLED']);
-    if (order.table_id) {
-      await db.query("UPDATE tables SET status = 'AVAILABLE' WHERE id = $1", [order.table_id]);
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const orderRes = await client.query(
+        'SELECT branch_id, payment_status, table_id, order_status FROM orders WHERE id = $1 FOR UPDATE',
+        [orderId]
+      );
+      const order = orderRes.rows[0] || null;
+      if (!order) {
+        await client.query('ROLLBACK');
+        return { error: 'not_found' };
+      }
+      if (order.payment_status === 'PAID') {
+        await client.query('ROLLBACK');
+        return { error: 'already_paid' };
+      }
+      if (order.order_status === 'CANCELLED') {
+        await client.query('ROLLBACK');
+        return { error: 'already_cancelled' };
+      }
+
+      await client.query('UPDATE orders SET order_status = $2, updated_at = now() WHERE id = $1', [orderId, 'CANCELLED']);
+      const tableStatus = await syncTableAvailability(client, order.table_id);
+      await client.query('COMMIT');
+      return { order, tableId: order.table_id || null, tableStatus };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    return { order };
   }
 
   async function addOrderItem(orderId, payload) {
@@ -234,14 +302,31 @@ module.exports = function createOrdersService(deps) {
   }
 
   async function closeOrder(orderId) {
-    const orderRes = await db.query('SELECT payment_status, table_id FROM orders WHERE id = $1', [orderId]);
-    if (orderRes.rows.length === 0) return { error: 'not_found' };
-    if (orderRes.rows[0].payment_status !== 'PAID') return { error: 'payment_required' };
-    await db.query("UPDATE orders SET order_status = 'CLOSED', updated_at = now() WHERE id = $1", [orderId]);
-    if (orderRes.rows[0].table_id) {
-      await db.query("UPDATE tables SET status = 'AVAILABLE' WHERE id = $1", [orderRes.rows[0].table_id]);
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const orderRes = await client.query(
+        'SELECT payment_status, table_id FROM orders WHERE id = $1 FOR UPDATE',
+        [orderId]
+      );
+      if (orderRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { error: 'not_found' };
+      }
+      if (orderRes.rows[0].payment_status !== 'PAID') {
+        await client.query('ROLLBACK');
+        return { error: 'payment_required' };
+      }
+      await client.query("UPDATE orders SET order_status = 'CLOSED', updated_at = now() WHERE id = $1", [orderId]);
+      const tableStatus = await syncTableAvailability(client, orderRes.rows[0].table_id);
+      await client.query('COMMIT');
+      return { tableId: orderRes.rows[0].table_id || null, tableStatus };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    return { tableId: orderRes.rows[0].table_id || null };
   }
 
   return {

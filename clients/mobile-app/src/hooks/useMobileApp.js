@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createMobileApi } from '../services/mobileApi';
 
@@ -13,6 +13,7 @@ export default function useMobileAppState() {
   const [branchId, setBranchId] = useState('');
   const [branches, setBranches] = useState([]);
   const [employeeId, setEmployeeId] = useState('');
+  const [employeeProfile, setEmployeeProfile] = useState(null);
   const [shiftId, setShiftId] = useState('');
   const [orderType, setOrderType] = useState('DINE_IN');
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -65,6 +66,7 @@ export default function useMobileAppState() {
     }, {}),
     [branches]
   );
+  const employeeBranchId = employeeProfile?.branch_id || '';
 
   const persistSetting = async (key, value) => {
     await AsyncStorage.setItem(key, value);
@@ -85,17 +87,117 @@ export default function useMobileAppState() {
     await persistSetting('employeeId', value);
   };
 
-  const getDeviceLocation = () => new Promise((resolve, reject) => {
-    if (!navigator?.geolocation) {
-      reject(new Error('geolocation_unavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
-      (err) => reject(err),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+  const requestLocationPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Cho phép vị trí',
+        message: 'AutoManager cần vị trí hiện tại để check-in và check-out.',
+        buttonPositive: 'Cho phép',
+        buttonNegative: 'Từ chối'
+      }
     );
-  });
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
+  const getDeviceLocation = async () => {
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      throw new Error('location_permission_denied');
+    }
+
+    if (Platform.OS === 'android' && NativeModules?.DeviceLocationModule?.getCurrentLocation) {
+      return NativeModules.DeviceLocationModule.getCurrentLocation({
+        timeoutMs: 15000,
+        maximumAgeMs: 10000
+      });
+    }
+
+    if (navigator?.geolocation?.getCurrentPosition) {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+          (err) => reject(err),
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        );
+      });
+    }
+
+    throw new Error('location_module_unavailable');
+  };
+
+  const createRequestError = async (res, fallbackCode) => {
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      try {
+        payload = { detail: await res.text() };
+      } catch {
+        payload = null;
+      }
+    }
+    const error = new Error(payload?.error || payload?.message || payload?.detail || fallbackCode);
+    error.payload = payload;
+    error.status = res.status;
+    return error;
+  };
+
+  const getAttendanceErrorMessage = (action, err) => {
+    const code = err?.message || '';
+    const payload = err?.payload || {};
+
+    if (code === 'location_permission_denied') {
+      return 'Bạn cần cấp quyền vị trí để chấm công.';
+    }
+    if (code === 'LOCATION_DISABLED') {
+      return 'Thiết bị đang tắt dịch vụ vị trí. Hãy bật GPS rồi thử lại.';
+    }
+    if (code === 'LOCATION_TIMEOUT') {
+      return 'Không lấy được vị trí hiện tại kịp thời gian. Hãy thử lại.';
+    }
+    if (code === 'LOCATION_UNAVAILABLE' || code === 'location_module_unavailable' || code === 'geolocation_unavailable') {
+      return 'Thiết bị chưa sẵn sàng lấy vị trí để chấm công.';
+    }
+    if (code === 'branch_location_missing') {
+      return 'Chi nhánh đang chọn chưa cấu hình tọa độ chấm công.';
+    }
+    if (code === 'employee_branch_mismatch') {
+      return 'Chi nhánh đang chọn không hợp lệ cho thao tác chấm công.';
+    }
+    if (code === 'too_far') {
+      if (payload?.distance_m != null && payload?.max_distance_m != null) {
+        return `Bạn đang cách chi nhánh ${payload.distance_m}m, vượt giới hạn ${payload.max_distance_m}m.`;
+      }
+      return `Bạn đang ở ngoài phạm vi cho phép để ${action}.`;
+    }
+    if (code === 'already_checked_in') {
+      if (payload?.open_branch_id) {
+        return `Nhân viên đang mở ca chấm công ở chi nhánh ${branchNameMap[payload.open_branch_id] || payload.open_branch_id}.`;
+      }
+      return 'Nhân viên đã check-in và chưa check-out.';
+    }
+    if (code === 'checked_in_other_branch') {
+      if (payload?.open_branch_id) {
+        return `Nhân viên đang check-in ở chi nhánh ${branchNameMap[payload.open_branch_id] || payload.open_branch_id}. Hãy chọn đúng chi nhánh để check-out.`;
+      }
+      return 'Nhân viên đang check-in ở chi nhánh khác.';
+    }
+    if (code === 'not_checked_in') {
+      return 'Nhân viên chưa check-in.';
+    }
+    if (code === 'shift_not_found') {
+      return 'Không tìm thấy ca làm phù hợp để check-in.';
+    }
+    if (code === 'forbidden') {
+      return 'Tài khoản hiện tại không có quyền chấm công.';
+    }
+    if (code === 'employee_not_found') {
+      return 'Không tìm thấy hồ sơ nhân viên để chấm công.';
+    }
+    return `Không thể ${action}.`;
+  };
 
   const pickShiftIdByTime = () => {
     if (!shifts.length) return '';
@@ -248,12 +350,23 @@ export default function useMobileAppState() {
     const fetchMe = async () => {
       try {
         const data = await api.getJson({ path: '/me' });
-        const empId = data?.employee?.id || '';
+        const employee = data?.employee || null;
+        const empId = employee?.id || '';
+        const empBranchId = employee?.branch_id || '';
+        setEmployeeProfile(employee);
         if (empId) {
           setEmployeeId(empId);
           await AsyncStorage.setItem('employeeId', empId);
         }
+        if (empBranchId) {
+          const savedBranch = await AsyncStorage.getItem('branchId');
+          if (!savedBranch) {
+            setBranchId(empBranchId);
+            await AsyncStorage.setItem('branchId', empBranchId);
+          }
+        }
       } catch {
+        setEmployeeProfile(null);
         // ignore
       }
     };
@@ -296,18 +409,7 @@ export default function useMobileAppState() {
 
   useEffect(() => {
     if (!token) return;
-    const fetchTables = async () => {
-      try {
-        const data = await api.getJson({
-          path: '/tables',
-          params: { branch_id: branchId }
-        });
-        setTables(data || []);
-      } catch {
-        setTables([]);
-      }
-    };
-    fetchTables();
+    refreshTables();
   }, [api, branchId, token]);
 
   useEffect(() => {
@@ -327,7 +429,11 @@ export default function useMobileAppState() {
       try {
         const msg = JSON.parse(event.data || '{}');
         if (msg.event?.startsWith('inventory.input')) refreshInputs();
-        if (msg.event?.startsWith('order.')) setStatusMessage(`Realtime: ${msg.event}`);
+        if (msg.event?.startsWith('order.') || msg.event?.startsWith('table.')) {
+          fetchOpenOrders();
+          refreshTables();
+          setStatusMessage(`Realtime: ${msg.event}`);
+        }
       } catch {
         // ignore
       }
@@ -495,6 +601,7 @@ export default function useMobileAppState() {
       setShowPayment(false);
       setStatusMessage('Đã thanh toán đơn.');
       fetchOpenOrders();
+      refreshTables();
     } catch (err) {
       setStatusMessage(`Không thể thanh toán: ${err?.message || 'Lỗi máy chủ.'}`);
     }
@@ -574,7 +681,10 @@ export default function useMobileAppState() {
 
   const handleLogout = async () => {
     await AsyncStorage.removeItem('token');
+    await AsyncStorage.removeItem('employeeId');
     setToken('');
+    setEmployeeId('');
+    setEmployeeProfile(null);
     setShowLogin(true);
   };
 
@@ -632,6 +742,90 @@ export default function useMobileAppState() {
     }
   };
 
+  const handleAttendanceCheckIn = async () => {
+    if (!employeeId) {
+      setStatusMessage('Cần employee_id để check-in.');
+      return;
+    }
+    if (!branchId) {
+      setStatusMessage('Cần chọn chi nhánh để check-in.');
+      return;
+    }
+    const autoShiftId = pickShiftIdByTime();
+    if (!autoShiftId) {
+      setStatusMessage('Không tìm thấy ca làm phù hợp.');
+      return;
+    }
+    try {
+      const location = await getDeviceLocation();
+      const res = await api.request({
+        path: '/attendance/checkin',
+        method: 'POST',
+        body: {
+          employee_id: employeeId,
+          shift_id: autoShiftId,
+          branch_id: branchId,
+          ...location
+        }
+      });
+      if (!res.ok) throw await createRequestError(res, 'checkin_failed');
+      const data = await res.json();
+      setShiftId(autoShiftId);
+      if (data?.check_in_status) {
+        setStatusMessage(`Check-in ${data.check_in_status === 'EARLY' ? 'sớm' : data.check_in_status === 'ON_TIME' ? 'đúng giờ' : 'muộn'} (${data.check_in_diff_minutes} phút).`);
+      } else {
+        setStatusMessage('Check-in thành công.');
+      }
+    } catch (err) {
+      setStatusMessage(getAttendanceErrorMessage('check-in', err));
+    }
+  };
+
+  const refreshTables = async () => {
+    if (!token) return;
+    try {
+      const data = await api.getJson({
+        path: '/tables',
+        params: { branch_id: branchId }
+      });
+      setTables(data || []);
+    } catch {
+      setTables([]);
+    }
+  };
+
+  const handleAttendanceCheckOut = async () => {
+    if (!employeeId) {
+      setStatusMessage('Cần employee_id để check-out.');
+      return;
+    }
+    if (!branchId) {
+      setStatusMessage('Cần chọn chi nhánh để check-out.');
+      return;
+    }
+    try {
+      const location = await getDeviceLocation();
+      const res = await api.request({
+        path: '/attendance/checkout',
+        method: 'POST',
+        body: {
+          employee_id: employeeId,
+          branch_id: branchId,
+          ...location
+        }
+      });
+      if (!res.ok) throw await createRequestError(res, 'checkout_failed');
+      const data = await res.json();
+      if (data?.check_out_status) {
+        setStatusMessage(`Check-out ${data.check_out_status === 'EARLY' ? 'sớm' : data.check_out_status === 'ON_TIME' ? 'đúng giờ' : 'muộn'} (${data.check_out_diff_minutes} phút).`);
+      } else {
+        setStatusMessage('Check-out thành công.');
+      }
+    } catch (err) {
+      setStatusMessage(getAttendanceErrorMessage('check-out', err));
+    }
+  };
+
   const handleCreateOrder = async () => {
     if (!branchId) {
       setStatusMessage('Cần chọn chi nhánh để tạo đơn.');
@@ -685,8 +879,15 @@ export default function useMobileAppState() {
       setSelectedTableId('');
       setStatusMessage(payNow ? 'Tạo đơn thành công.' : 'Đã lưu đơn thanh toán sau.');
       fetchOpenOrders();
+      refreshTables();
     } catch (err) {
       const message = String(err?.message || '').toLowerCase();
+      if (message.includes('table_occupied')) {
+        setStatusMessage('Bàn này đang có phiếu mở. Hãy chọn bàn khác hoặc mở phiếu hiện tại.');
+        fetchOpenOrders();
+        refreshTables();
+        return;
+      }
       const isNetworkError = message.includes('network request failed')
         || message.includes('failed to fetch');
       if (isNetworkError) {
@@ -759,6 +960,8 @@ export default function useMobileAppState() {
     updateBranchId,
     branches,
     employeeId,
+    employeeProfile,
+    employeeBranchId,
     updateEmployeeId,
     shiftId,
     orderType,
@@ -815,8 +1018,8 @@ export default function useMobileAppState() {
     handleLogin,
     handleChangePassword,
     handleLogout,
-    handleCheckIn,
-    handleCheckOut,
+    handleCheckIn: handleAttendanceCheckIn,
+    handleCheckOut: handleAttendanceCheckOut,
     handleCreateOrder,
     handleCreateInput
   };

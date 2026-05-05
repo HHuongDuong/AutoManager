@@ -6,8 +6,7 @@ module.exports = function createAttendanceRouter(deps) {
     authenticate,
     requirePermission,
     branchFilter,
-    requireResourceBranch,
-    getEmployeeBranchId
+    requireBranchBody
   } = deps;
 
   const router = express.Router();
@@ -19,28 +18,28 @@ module.exports = function createAttendanceRouter(deps) {
   router.post('/attendance/checkin',
     authenticate,
     requirePermission('ATTENDANCE_MANAGE'),
+    requireBranchBody({ bodyKey: 'branch_id', required: true }),
     (req, res, next) => {
-      const { employee_id, shift_id } = req.body || {};
-      if (!employee_id || !shift_id) return res.status(400).json({ error: 'employee_shift_required' });
+      const { employee_id, shift_id, branch_id } = req.body || {};
+      if (!employee_id || !shift_id || !branch_id) return res.status(400).json({ error: 'employee_shift_branch_required' });
       return next();
     },
-    requireResourceBranch(req => getEmployeeBranchId(req.body.employee_id), { notFoundError: 'employee_not_found' }),
     controller.checkIn
   );
 
   router.post('/attendance/checkout',
     authenticate,
     requirePermission('ATTENDANCE_MANAGE'),
+    requireBranchBody({ bodyKey: 'branch_id', required: true }),
     (req, res, next) => {
-      const { employee_id } = req.body || {};
-      if (!employee_id) return res.status(400).json({ error: 'employee_required' });
+      const { employee_id, branch_id } = req.body || {};
+      if (!employee_id || !branch_id) return res.status(400).json({ error: 'employee_branch_required' });
       return next();
     },
-    requireResourceBranch(req => getEmployeeBranchId(req.body.employee_id), { notFoundError: 'employee_not_found' }),
     controller.checkOut
   );
 
-  router.get('/attendance/logs', authenticate, requirePermission('ATTENDANCE_VIEW'), branchFilter({ column: 'e.branch_id' }), controller.listLogs);
+  router.get('/attendance/logs', authenticate, requirePermission('ATTENDANCE_VIEW'), branchFilter({ column: 'a.branch_id' }), controller.listLogs);
 
   return router;
 };

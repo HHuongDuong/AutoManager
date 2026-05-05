@@ -2,6 +2,39 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 module.exports = function createAiService() {
+  function normalizeSeries(series = []) {
+    return (Array.isArray(series) ? series : [])
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value));
+  }
+
+  function forecastMovingAverage(payload) {
+    const values = normalizeSeries(payload.series);
+    const horizon = Math.max(1, Number(payload.horizon || 7));
+    const requestedWindow = Math.max(1, Number(payload.window || 7));
+    const window = Math.min(requestedWindow, values.length || requestedWindow);
+
+    if (!values.length) return { error: 'series_required' };
+
+    const history = [...values];
+    const forecast = [];
+    for (let i = 0; i < horizon; i += 1) {
+      const sample = history.slice(-window);
+      const avg = sample.reduce((sum, value) => sum + value, 0) / sample.length;
+      const nextValue = Number(avg.toFixed(2));
+      forecast.push(nextValue);
+      history.push(nextValue);
+    }
+
+    return {
+      method: 'moving_average',
+      horizon,
+      window,
+      forecast,
+      source: 'local'
+    };
+  }
+
   function getAiEndpoint() {
     if (!GEMINI_API_KEY) return null;
     const model = encodeURIComponent(GEMINI_MODEL);
@@ -89,19 +122,35 @@ module.exports = function createAiService() {
   }
 
   async function forecast(payload) {
-    if (!GEMINI_API_KEY) return { error: 'ai_not_configured' };
     const { series = [], horizon = 7, method = 'moving_average', window = 7 } = payload;
+    if (method === 'moving_average') {
+      return forecastMovingAverage({ series, horizon, window });
+    }
+    if (method !== 'gemini') return { error: 'unsupported_method' };
+    if (!GEMINI_API_KEY) {
+      return forecastMovingAverage({ series, horizon, window });
+    }
     const prompt = [
       'You are a forecasting service. Return ONLY valid JSON.',
       'Task: Forecast the next values for the series.',
       'Input JSON:',
-      JSON.stringify({ series, horizon, method, window }),
+      JSON.stringify({ series, horizon, method: 'gemini', window }),
       'Output JSON schema:',
       '{"method":"moving_average","horizon":7,"window":7,"forecast":[1,2,3]}'
     ].join('\n');
     const result = await callGemini(prompt);
-    if (result?.error) return result;
-    return result;
+    if (result?.error) {
+      const fallback = forecastMovingAverage({ series, horizon, window });
+      return {
+        ...fallback,
+        source: 'local_fallback',
+        fallback_reason: result.error
+      };
+    }
+    return {
+      ...result,
+      source: 'ai'
+    };
   }
 
   async function suggestReorder(payload) {
