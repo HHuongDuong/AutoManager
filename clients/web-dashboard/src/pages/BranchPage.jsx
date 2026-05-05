@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function BranchPage() {
   const { state, actions } = useDashboardContext();

@@ -42,7 +42,9 @@ module.exports = function createInventoryController(deps) {
   }
 
   async function listIngredients(req, res) {
-    const rows = await inventoryService.listIngredients(req.query?.category_id || null);
+    const categoryId = req.query?.category_id || null;
+    const branchId = req.query?.branch_id || null;
+    const rows = await inventoryService.listIngredients(categoryId, branchId, req.branchFilter);
     return res.json(rows);
   }
 

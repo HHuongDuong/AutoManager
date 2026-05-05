@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function EmployeePage() {
   const { state, actions, derived } = useDashboardContext();

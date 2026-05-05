@@ -1,107 +1,182 @@
-# Kiến trúc cao cấp — AutoManager POS
+# Kiến trúc hệ thống — AutoManager
 
-Tài liệu này mô tả kiến trúc tổng quan, ranh giới dịch vụ, luồng dữ liệu chính, thiết kế offline/local-sync, yêu cầu hiệu năng và hướng triển khai cho hệ thống AutoManager POS.
+Tài liệu này mô tả kiến trúc hệ thống của AutoManager theo phong cách phân lớp giống mẫu tham chiếu: `Client -> API Layer -> Application Layer -> Infrastructure Layer -> Domain Layer -> Database`.
+Khác với mẫu ASP.NET, dự án này dùng `React / React Native / Electron` ở phía client, `Node.js + Express` ở phía server, và `PostgreSQL` làm cơ sở dữ liệu giao dịch trung tâm.
 
-## Mục tiêu
-- Hỗ trợ bán hàng tại quầy nhanh (latency < 1s) và hoạt động offline cơ bản.
-- Thiết kế module hóa, dễ mở rộng (multi-branch, payment providers mở rộng).
-- Triển khai local-first, có thể mở rộng lên cloud.
+## 1. Tổng quan kiến trúc
 
-## Thành phần chính (Service Boundaries)
+Hệ thống được tổ chức theo mô hình client-server nhiều lớp:
 
-- POS Desktop (Electron)
-  - UI bán hàng, cache local, queue thao tác khi offline, Sync Agent.
-- Web Dashboard (React/Next.js)
-  - Quản lý sản phẩm, nhân viên, báo cáo.
-- Mobile App (Flutter / React Native)
-  - Check-in/checkout, xem ca làm.
-- Backend API (Node.js / NestJS hoặc Express)
-  - Auth Service (JWT, bcrypt)
-  - POS Service (orders, tables)
-  - Inventory Service (ingredients, transactions)
-  - Staff & Attendance Service
-  - Report Service
-  - Sync Service / Conflict Resolver
-- Data Stores
-  - PostgreSQL: chính cho transactional data
-  - Redis: cache, distributed locks, rate-limit
-  - Object store (S3) cho backup off-site
-- Infrastructure
-  - Queue (RabbitMQ / Redis Streams) cho các tác vụ background (sync, reports)
-  - Monitoring (Prometheus + Grafana)
-  - Logging (centralized log — ELK/Opensearch)
+- Lớp Client gồm 3 ứng dụng giao diện:
+  - `web-dashboard`: dashboard quản trị chạy trên trình duyệt.
+  - `pos-desktop`: ứng dụng POS desktop chạy bằng Electron.
+  - `mobile-app`: ứng dụng di động React Native cho tác vụ vận hành.
+- Lớp Server là backend Express, nhận request qua HTTP/JSON và WebSocket khi cần realtime.
+- Lớp Application chứa các service nghiệp vụ như đơn hàng, kho, phân quyền, báo cáo, ca làm, chi nhánh, AI.
+- Lớp Infrastructure xử lý tích hợp kỹ thuật như PostgreSQL, Redis, RabbitMQ, file upload, export, realtime.
+- Lớp Domain là lõi quy tắc nghiệp vụ và mô hình dữ liệu của hệ thống.
+- Database trung tâm là `PostgreSQL`, được quản lý bằng migration trong `db/migrations/`.
 
-## Luồng dữ liệu chính: tạo đơn (offline-capable)
+### 1.1. Sơ đồ kiến trúc tổng quan
 
-1. POS UI tạo order -> ghi vào local DB (IndexedDB/SQLite) và trả response nhanh cho UI.
-2. Order được push vào local queue (FIFO) của Sync Agent.
-3. Khi có kết nối, Sync Agent gửi order tới Backend POS Service qua API `/orders`.
-4. Backend xác thực, tạo transactional record, trả về server-assigned id và trạng thái. Nếu có conflict (ví dụ duplicate id), backend trả conflict error; client sẽ reconcile (merge hoặc user review).
-5. Backend ghi audit log và đẩy message vào queue để các service liên quan xử lý (inventory transaction, report update).
+```plantuml
+@startuml
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
 
-Ghi chú: Mỗi order local cần chứa a) client_id (local temp id), b) created_at, c) branch_id, d) retry metadata.
+rectangle "Client Layer" as Client {
+  [Web Dashboard\nReact + Vite] as Web
+  [POS Desktop\nElectron + React + Vite] as POS
+  [Mobile App\nReact Native] as Mobile
+}
 
-## Thiết kế offline / sync
+rectangle "Server - Node.js / Express" as Server {
+  rectangle "API Layer\nRoutes, Controllers, Validation, Auth Middleware" as API
+  rectangle "Application Layer\nordersService, productsService, inventoryService,\nreportsService, rbacService, authService,\nattendanceService, branchesService, aiService, tablesService" as APP
+  rectangle "Infrastructure Layer\npg, Redis, RabbitMQ, Multer, Excel export,\nproduct cache, realtime service" as INF
+  rectangle "Domain Layer\nBusiness rules, entities, interfaces" as DOM
+  rectangle "Realtime endpoint / WS gateway" as RT
 
-- Local store: chọn SQLite cho Electron, IndexedDB cho web PWA; schema subset của order và product cache.
-- Sync Agent: chịu trách nhiệm retry/backoff, idempotency (idempotency-key), và conflict detection.
-- Conflict strategy: prefer server-authoritative for order ids; cho phép merge nếu metadata khác (ví dụ thanh toán trạng thái). Đối với trạng thái kho, yêu cầu manual adjustment (do hệ thống không tự trừ kho khi bán).
+  API --> APP
+  APP --> INF
+  INF --> DOM
+  RT --> APP
+}
 
-## Multi-branch & tenancy
+database "PostgreSQL" as DB
 
-- Data model: thêm `branch_id` trên các bảng chính (`orders`, `inventory_transactions`, `products`, `users` nếu cần phân quyền theo chi nhánh).
-- Triển khai mặc định: single-db, logical partition bằng `branch_id`. Option: multi-tenant DB khi cần isolation.
+Web --> API : HTTP / JSON
+POS --> API : HTTP / JSON
+Mobile --> API : HTTP / JSON
+Web --> RT : WebSocket khi cần realtime
+POS --> RT : WebSocket khi cần realtime
+Mobile --> RT : WebSocket khi cần realtime
+DOM --> DB
+@enduml
+```
 
-## Concurrency & hiệu năng
+## 2. Mô tả từng lớp
 
-- Baseline: thiết kế chịu K = 50 concurrent POS clients (tùy chỉnh cấu hình).
-- Tối ưu endpoint bán hàng: connection pooling, prepared statements, small transaction scopes.
-- Chỉ số quan trọng: p95 latency API tạo đơn < 1s; DB connections >= expected concurrency * 2.
-- Cache: product catalog in Redis; static configs cached on client.
+### 2.1. Client Layer
 
-## Backup, retention & SLA
+Đây là lớp giao diện người dùng, tách theo từng kịch bản sử dụng:
 
-- Backup strategy: full daily backup + continuous WAL archiving; weekly off-site copy to S3.
-- Test restore: monthly restore drill.
-- Retention: audit logs giữ 1 năm; backup retention policy configurable.
-- SLA đề xuất cho deployment cloud/local-managed: target 99.9% uptime; RTO <=1h, RPO <=15m (tùy hợp đồng).
+- `web-dashboard` dùng React + Vite để quản trị sản phẩm, nhân viên, báo cáo và phân quyền.
+- `pos-desktop` dùng Electron để phục vụ bán hàng tại quầy, cho phép thao tác nhanh và có thể mở rộng realtime.
+- `mobile-app` dùng React Native để hỗ trợ tác vụ di động như theo dõi ca làm, check-in/check-out và nghiệp vụ vận hành.
 
-## Payment abstraction
+Tất cả client giao tiếp với backend qua HTTP API, sử dụng các service riêng trong từng ứng dụng để gọi endpoint và quản lý trạng thái.
 
-- Store `payment_method` enum on `payments` (CASH, CARD, QR, WALLET, OTHER) and design extensible `payment_records` table to attach provider metadata.
-- Current scope: implement `CASH` only; add provider adapter interface for future integrations.
+### 2.2. API Layer
 
-## Database & schema notes
+Lớp API là điểm vào của hệ thống, nằm trong `services/backend/src/routes/`, `controllers/`, `validation/` và `middleware/`.
 
-- PostgreSQL: use transactions for order creation; create indices on `orders(branch_id, created_at)`, `order_items(order_id)`, `products(branch_id, id)`.
-- Use materialized views for heavy reports (sales per day) and refresh-as-needed or via background job.
+Chức năng chính:
 
-## Deployment & scaling
+- Định tuyến request theo từng nhóm nghiệp vụ: auth, orders, products, inventory, reports, attendance, branches, RBAC, audit logs, tables, AI.
+- Kiểm tra dữ liệu đầu vào bằng schema validation.
+- Xác thực và phân quyền bằng middleware.
+- Chuyển request hợp lệ sang application service phù hợp.
 
-- Local-first mode: backend can be run on an on-premise server inside store LAN; POS clients connect to local backend for lowest latency.
-- Cloud mode: backend hosted on VPS or k8s; use managed Postgres and object storage.
-- Recommend containerization (Docker) for all services.
+### 2.3. Application Layer
 
-## Observability
+Lớp này chứa logic nghiệp vụ chính trong `services/backend/src/services/`.
 
-- Metrics: request latency, DB connections, queue depth, sync failures per client.
-- Logs: centralized audit logs + app logs; retain audit logs per retention policy.
+Các service nổi bật:
 
-## Tech stack (recommend)
+- `authService` xử lý đăng nhập, JWT và định danh người dùng.
+- `rbacService` xử lý vai trò, quyền và phạm vi chi nhánh.
+- `ordersService` quản lý tạo đơn, thêm món, thanh toán và trạng thái đơn.
+- `productsService` quản lý danh mục, sản phẩm và giá theo chi nhánh.
+- `inventoryService` xử lý nhập/xuất kho, nguyên liệu và kiểm kê.
+- `attendanceService` xử lý ca làm, check-in và check-out.
+- `reportsService` tổng hợp báo cáo doanh thu, kho và chấm công.
+- `branchesService` xử lý CRUD chi nhánh và thông tin vị trí.
+- `tablesService` xử lý bàn phục vụ cho nghiệp vụ POS.
+- `aiService` cung cấp gợi ý dự báo và đề xuất đặt hàng lại.
+- `auditLogsService` và `auditService` phục vụ ghi nhận, truy vết và tra cứu lịch sử thao tác.
 
-- Backend: Node.js (TypeScript) + NestJS/Express
-- DB: PostgreSQL
-- Cache: Redis
-- Queue: RabbitMQ / Redis Streams
-- POS Desktop: Electron + React
-- Web Dashboard: React (Next.js)
-- Mobile: Flutter or React Native
+Đây là nơi kết hợp dữ liệu từ nhiều nguồn trước khi ghi xuống database hoặc trả về client.
 
-## Next steps (implementable tasks)
-- Create ERD and detailed schema for `orders`, `order_items`, `payments`, `inventory_transactions`.
-- Define API contract for `/orders` (incl. idempotency-key, branch_id, client_id).
-- Implement Sync Agent prototype for Electron POS.
-- Create deployment manifests (Docker Compose + k8s templates).
+### 2.4. Infrastructure Layer
+
+Lớp hạ tầng nằm ở `services/backend/src/services/infra/` và các module tích hợp liên quan.
+
+Các thành phần chính:
+
+- PostgreSQL driver qua `pg` để truy cập dữ liệu giao dịch.
+- Redis để cache và hỗ trợ các luồng truy cập lặp lại.
+- RabbitMQ để xử lý tác vụ nền và tách bớt nghiệp vụ nặng.
+- WebSocket để hỗ trợ realtime, đặc biệt hữu ích cho POS desktop.
+- Multer để upload file, ví dụ ảnh sản phẩm.
+- Excel export để xuất báo cáo.
+- Product cache service để tăng tốc truy vấn danh mục và giá.
+
+Lớp này không chứa luật nghiệp vụ, mà tập trung vào cách hệ thống giao tiếp với tài nguyên bên ngoài.
+
+### 2.5. Domain Layer
+
+Lớp Domain là phần lõi của hệ thống, nơi đặt các quy tắc nghiệp vụ ổn định nhất.
+
+Trong AutoManager, domain được thể hiện thông qua:
+
+- Mô hình dữ liệu trong PostgreSQL.
+- Các quy tắc hợp lệ của đơn hàng, thanh toán, kiểm kê, chấm công, phân quyền và chi nhánh.
+- DTO, interface và các quy ước dữ liệu dùng chung giữa API, service và database.
+
+Các quy tắc này giúp hệ thống giữ được tính nhất quán dù thay đổi giao diện hay hạ tầng phía ngoài.
+
+## 3. Cơ sở dữ liệu
+
+Database trung tâm là `PostgreSQL`.
+
+- Schema được quản lý bằng các file migration trong `db/migrations/`.
+- Mọi dữ liệu nghiệp vụ quan trọng như người dùng, đơn hàng, thanh toán, kho, ca làm, audit log và e-invoice đều được lưu tại đây.
+- Các bảng chính được thiết kế theo mô hình đa chi nhánh với `branch_id` để cô lập dữ liệu theo đơn vị vận hành.
+
+Các nhóm bảng tiêu biểu:
+
+- Nhóm định danh và phân quyền: `users`, `roles`, `permissions`, `user_roles`, `role_permissions`, `user_branch_access`.
+- Nhóm bán hàng: `tables`, `orders`, `order_items`, `payments`.
+- Nhóm danh mục và giá: `products`, `product_categories`, `product_branch_prices`.
+- Nhóm kho: `ingredients`, `inventory_transactions`, `inventory_categories`, `stocktakes`, `stocktake_items`.
+- Nhóm nhân sự: `employees`, `shifts`, `attendance`.
+- Nhóm hệ thống: `branches`, `audit_logs`, `e_invoice_settings`, `e_invoices`, `idempotency_keys`.
+
+## 4. Luồng dữ liệu chính
+
+### 4.1. Đăng nhập
+
+1. Client gửi thông tin đăng nhập đến API.
+2. API xác thực dữ liệu, gọi `authService`.
+3. Service kiểm tra mật khẩu, vai trò và quyền truy cập chi nhánh.
+4. Hệ thống trả JWT hoặc session token về client.
+
+### 4.2. Tạo đơn hàng
+
+1. POS hoặc web dashboard gửi request tạo đơn đến `ordersController`.
+2. `ordersService` xử lý logic đơn, kiểm tra idempotency, tính tổng tiền và trạng thái.
+3. Dữ liệu được ghi xuống PostgreSQL trong một transaction.
+4. Hệ thống ghi audit log và có thể đẩy tác vụ liên quan sang Redis/RabbitMQ.
+
+### 4.3. Báo cáo
+
+1. Client gọi API báo cáo.
+2. `reportsService` tổng hợp dữ liệu từ các bảng nghiệp vụ.
+3. Nếu truy vấn nặng, service có thể tận dụng cache, pre-aggregation hoặc export sang Excel.
+
+## 5. Đặc điểm kiến trúc
+
+- Tách lớp rõ ràng để dễ bảo trì và mở rộng.
+- Client đa nền tảng nhưng dùng chung backend API.
+- Hỗ trợ multi-branch bằng `branch_id` và bảng cấp quyền theo chi nhánh.
+- Có sẵn nền tảng cho realtime, cache và xử lý nền.
+- Phù hợp cho mô hình triển khai nội bộ cửa hàng hoặc triển khai tập trung.
+
+## 6. Kết luận
+
+Kiến trúc AutoManager là kiến trúc client-server nhiều lớp, trong đó giao diện được tách thành web, desktop và mobile; backend Express đảm nhiệm toàn bộ nghiệp vụ; PostgreSQL là nguồn dữ liệu trung tâm; còn Redis và RabbitMQ hỗ trợ hiệu năng và các tác vụ nền.
 
 ---
 Generated: Architecture - AutoManager

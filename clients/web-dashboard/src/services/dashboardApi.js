@@ -20,6 +20,14 @@ const request = async (apiBase, path, options = {}) => {
   if (!res.ok) {
     const error = new Error('request_failed');
     error.status = res.status;
+    try {
+      const contentType = res.headers.get('content-type') || '';
+      error.payload = contentType.includes('application/json')
+        ? await res.json()
+        : await res.text();
+    } catch {
+      error.payload = null;
+    }
     throw error;
   }
   return res;
@@ -49,7 +57,7 @@ export default function createDashboardApi(apiBase, token) {
     getProductCategories: () => requestJson(apiBase, '/product-categories', { headers: authHeaders() }),
     getProducts: (params) => requestJson(apiBase, `/products${buildQuery(params)}`, { headers: authHeaders() }),
     getInventoryCategories: () => requestJson(apiBase, '/inventory/categories', { headers: authHeaders() }),
-    getIngredients: () => requestJson(apiBase, '/ingredients', { headers: authHeaders() }),
+    getIngredients: (params) => requestJson(apiBase, `/ingredients${buildQuery(params)}`, { headers: authHeaders() }),
     getStocktakes: (params) => requestJson(apiBase, `/stocktakes${buildQuery(params)}`, { headers: authHeaders() }),
     getStocktakeItems: (stocktakeId) => requestJson(apiBase, `/stocktakes/${stocktakeId}/items`, { headers: authHeaders() }),
     getShifts: () => requestJson(apiBase, '/shifts', { headers: authHeaders() }),

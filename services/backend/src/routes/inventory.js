@@ -27,7 +27,7 @@ module.exports = function createInventoryRouter(deps) {
   router.patch('/inventory/categories/:id', authenticate, requirePermission('INVENTORY_MANAGE'), validateBody(inventoryCategoryPatchSchema), controller.updateCategory);
   router.delete('/inventory/categories/:id', authenticate, requirePermission('INVENTORY_MANAGE'), controller.deleteCategory);
 
-  router.get('/ingredients', authenticate, requirePermission('INVENTORY_VIEW'), controller.listIngredients);
+  router.get('/ingredients', authenticate, requirePermission('INVENTORY_VIEW'), branchFilter(), controller.listIngredients);
   router.post('/ingredients', authenticate, requirePermission('INVENTORY_MANAGE'), validateBody(ingredientCreateSchema), controller.createIngredient);
   router.patch('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE'), validateBody(ingredientPatchSchema), controller.updateIngredient);
   router.delete('/ingredients/:id', authenticate, requirePermission('INVENTORY_MANAGE'), controller.deleteIngredient);

@@ -1,5 +1,5 @@
 import { formatVnd } from '../utils/format';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function ReportPage() {
   const { state, actions, derived } = useDashboardContext();

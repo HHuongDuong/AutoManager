@@ -13,7 +13,7 @@ import BranchPage from './pages/BranchPage';
 import RbacPage from './pages/RbacPage';
 import ReportPage from './pages/ReportPage';
 import AiPage from './pages/AiPage';
-import { useDashboardContext } from './context/DashboardContext';
+import { useDashboardContext } from './context/useDashboardContext';
 
 const navItems = [
   { id: 'overview', label: 'Tổng quan', path: '/' },

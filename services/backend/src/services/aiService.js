@@ -1,10 +1,11 @@
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 module.exports = function createAiService() {
   function getAiEndpoint() {
-    if (!GROQ_API_KEY) return null;
-    return 'https://api.groq.com/openai/v1/chat/completions';
+    if (!GEMINI_API_KEY) return null;
+    const model = encodeURIComponent(GEMINI_MODEL);
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
   }
 
   function extractJson(text) {
@@ -40,23 +41,27 @@ module.exports = function createAiService() {
     }
   }
 
-  async function callGroq(prompt) {
+  async function callGemini(prompt) {
     const endpoint = getAiEndpoint();
     if (!endpoint) return { error: 'ai_not_configured' };
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${GROQ_API_KEY}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: [
-            { role: 'system', content: 'Return ONLY valid JSON with no extra text.' },
-            { role: 'user', content: prompt }
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: `Return ONLY valid JSON with no extra text.\n${prompt}` }
+              ]
+            }
           ],
-          temperature: 0.2
+          generationConfig: {
+            temperature: 0.2
+          }
         })
       });
       if (!res.ok) {
@@ -66,11 +71,11 @@ module.exports = function createAiService() {
         } catch {
           bodyText = '';
         }
-        console.log('[ai] groq error', { status: res.status, body: bodyText });
+        console.log('[ai] gemini error', { status: res.status, body: bodyText });
         return { error: 'ai_provider_error', status: res.status };
       }
       const data = await res.json();
-      const text = data?.choices?.[0]?.message?.content || '';
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const json = extractJson(text);
       if (!json) {
         console.log('[ai] invalid response', { text });
@@ -78,13 +83,13 @@ module.exports = function createAiService() {
       }
       return json;
     } catch {
-      console.log('[ai] groq error', { message: 'request_failed' });
+      console.log('[ai] gemini error', { message: 'request_failed' });
       return { error: 'ai_provider_error' };
     }
   }
 
   async function forecast(payload) {
-    if (!GROQ_API_KEY) return { error: 'ai_not_configured' };
+    if (!GEMINI_API_KEY) return { error: 'ai_not_configured' };
     const { series = [], horizon = 7, method = 'moving_average', window = 7 } = payload;
     const prompt = [
       'You are a forecasting service. Return ONLY valid JSON.',
@@ -94,13 +99,13 @@ module.exports = function createAiService() {
       'Output JSON schema:',
       '{"method":"moving_average","horizon":7,"window":7,"forecast":[1,2,3]}'
     ].join('\n');
-    const result = await callGroq(prompt);
+    const result = await callGemini(prompt);
     if (result?.error) return result;
     return result;
   }
 
   async function suggestReorder(payload) {
-    if (!GROQ_API_KEY) return { error: 'ai_not_configured' };
+    if (!GEMINI_API_KEY) return { error: 'ai_not_configured' };
     const { branch_id, items = [] } = payload;
     const prompt = [
       'You are a reorder suggestion service. Return ONLY valid JSON.',
@@ -110,7 +115,7 @@ module.exports = function createAiService() {
       'Output JSON schema:',
       '{"branch_id":"uuid","suggestions":[{"ingredient_id":"id","on_hand":0,"avg_daily":0,"horizon_days":7,"target_stock":0,"reorder_qty":0}]}'
     ].join('\n');
-    const result = await callGroq(prompt);
+    const result = await callGemini(prompt);
     if (result?.error) return result;
     return result;
   }

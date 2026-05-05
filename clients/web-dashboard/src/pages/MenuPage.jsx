@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { formatVnd } from '../utils/format';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function MenuPage() {
   const { state, actions, derived } = useDashboardContext();
@@ -81,8 +81,16 @@ export default function MenuPage() {
           {state.productForm.id && (
             <div className="form-row">
               <label>Ảnh sản phẩm</label>
-              <input type="file" accept="image/*" onChange={(e) => actions.setProductImageFile(e.target.files?.[0] || null)} />
-              <button className="btn ghost" onClick={actions.handleUploadProductImage}>Upload ảnh</button>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  actions.setProductImageFile(file);
+                  if (file) actions.handleUploadProductImage(file);
+                }}
+              />
+              <button type="button" className="btn ghost" onClick={() => actions.handleUploadProductImage()}>Upload ảnh</button>
             </div>
           )}
         </div>

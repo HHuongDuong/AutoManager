@@ -1,0 +1,250 @@
+@startuml ERD_AutoManager
+' AutoManager ERD (PlantUML)
+' Generated summary of db/migrations and backend models
+
+hide circle
+skinparam linetype ortho
+
+entity "branches" as branches {
+  * id : UUID <<PK>>
+  --
+  name : TEXT
+  address : TEXT
+  latitude : NUMERIC
+  longitude : NUMERIC
+  created_at : TIMESTAMP
+}
+
+entity "users" as users {
+  * id : UUID <<PK>>
+  --
+  username : TEXT
+  password_hash : TEXT
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+}
+
+entity "employees" as employees {
+  * id : UUID <<PK>>
+  --
+  user_id : UUID <<FK users.id>>
+  branch_id : UUID <<FK branches.id>>
+  full_name : TEXT
+  phone : TEXT
+  position : TEXT
+  created_at : TIMESTAMP
+}
+
+entity "roles" as roles {
+  * id : UUID <<PK>>
+  name : TEXT
+}
+
+entity "permissions" as permissions {
+  * id : UUID <<PK>>
+  code : TEXT
+  description : TEXT
+}
+
+entity "user_roles" as user_roles {
+  * user_id : UUID <<FK users.id>>
+  * role_id : UUID <<FK roles.id>>
+}
+
+entity "role_permissions" as role_permissions {
+  * role_id : UUID <<FK roles.id>>
+  * permission_id : UUID <<FK permissions.id>>
+}
+
+entity "audit_logs" as audit_logs {
+  * id : UUID <<PK>>
+  --
+  user_id : UUID <<FK users.id>>
+  branch_id : UUID <<FK branches.id>>
+  action : TEXT
+  object_type : TEXT
+  object_id : UUID
+  payload : JSONB
+  created_at : TIMESTAMP
+}
+
+entity "tables" as rest_tables {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  name : TEXT
+  status : TEXT
+}
+
+entity "product_categories" as product_categories {
+  * id : UUID <<PK>>
+  name : TEXT
+}
+
+entity "products" as products {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  category_id : UUID <<FK product_categories.id>>
+  sku : TEXT
+  name : TEXT
+  price : NUMERIC
+  is_active : BOOLEAN
+  image_url : TEXT
+  created_at : TIMESTAMP
+}
+
+entity "product_branch_prices" as product_branch_prices {
+  * product_id : UUID <<FK products.id>>
+  * branch_id : UUID <<FK branches.id>>
+  price : NUMERIC
+}
+
+entity "orders" as orders {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  created_by : UUID <<FK users.id>>
+  client_id : TEXT
+  order_type : TEXT
+  table_id : UUID <<FK rest_tables.id>>
+  order_status : TEXT
+  payment_status : TEXT
+  total_amount : NUMERIC
+  metadata : JSONB
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "order_items" as order_items {
+  * id : UUID <<PK>>
+  order_id : UUID <<FK orders.id>>
+  product_id : UUID <<FK products.id>>
+  name : TEXT
+  quantity : INTEGER
+  unit_price : NUMERIC
+  subtotal : NUMERIC
+  created_at : TIMESTAMP
+}
+
+entity "payments" as payments {
+  * id : UUID <<PK>>
+  order_id : UUID <<FK orders.id>>
+  amount : NUMERIC
+  payment_method : TEXT
+  provider_metadata : JSONB
+  created_at : TIMESTAMP
+}
+
+entity "ingredients" as ingredients {
+  * id : UUID <<PK>>
+  name : TEXT
+  unit : TEXT
+  category_id : UUID <<FK inventory_categories.id>>
+}
+
+entity "inventory_transactions" as inventory_transactions {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  ingredient_id : UUID <<FK ingredients.id>>
+  order_id : UUID <<FK orders.id>>
+  quantity : NUMERIC
+  unit_cost : NUMERIC
+  transaction_type : TEXT
+  created_by : UUID <<FK users.id>>
+  created_at : TIMESTAMP
+}
+
+entity "inventory_categories" as inventory_categories {
+  * id : UUID <<PK>>
+  name : TEXT
+}
+
+entity "stocktakes" as stocktakes {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  status : TEXT
+  created_by : UUID <<FK users.id>>
+  created_at : TIMESTAMP
+}
+
+entity "stocktake_items" as stocktake_items {
+  * id : UUID <<PK>>
+  stocktake_id : UUID <<FK stocktakes.id>>
+  ingredient_id : UUID <<FK ingredients.id>>
+  system_qty : NUMERIC
+  actual_qty : NUMERIC
+  delta_qty : NUMERIC
+}
+
+entity "shifts" as shifts {
+  * id : UUID <<PK>>
+  name : TEXT
+  start_time : TIME
+  end_time : TIME
+}
+
+entity "attendance" as attendance {
+  * id : UUID <<PK>>
+  employee_id : UUID <<FK employees.id>>
+  shift_id : UUID <<FK shifts.id>>
+  check_in : TIMESTAMP
+  check_out : TIMESTAMP
+}
+
+entity "e_invoices" as e_invoices {
+  * id : UUID <<PK>>
+  branch_id : UUID <<FK branches.id>>
+  order_id : UUID <<FK orders.id>>
+  provider : TEXT
+  status : TEXT
+  issued_at : TIMESTAMP
+}
+
+entity "idempotency_keys" as idempotency_keys {
+  * id : UUID <<PK>>
+  key : TEXT
+  user_id : UUID <<FK users.id>>
+  order_id : UUID <<FK orders.id>>
+  created_at : TIMESTAMP
+}
+
+' Relationships
+branches ||--o{ employees : "has"
+users ||--o{ employees : "account"
+users ||--o{ user_roles : "assigned"
+roles ||--o{ user_roles : "contains"
+roles ||--o{ role_permissions : "grants"
+permissions ||--o{ role_permissions : "part of"
+branches ||--o{ rest_tables : "owns"
+branches ||--o{ products : "offers"
+product_categories ||--o{ products : "categorizes"
+products ||--o{ product_branch_prices : "priced-per-branch"
+branches ||--o{ orders : "receives"
+users ||--o{ orders : "creates"
+orders ||--o{ order_items : "contains"
+products ||--o{ order_items : "is"
+orders ||--o{ payments : "paid-by"
+branches ||--o{ inventory_transactions : "records"
+ingredients ||--o{ inventory_transactions : "used-in"
+stocktakes ||--o{ stocktake_items : "includes"
+ingredients ||--o{ stocktake_items : "counts"
+shifts ||--o{ attendance : "has"
+employees ||--o{ attendance : "logs"
+users ||--o{ audit_logs : "creates"
+branches ||--o{ audit_logs : "context"
+orders ||--o{ inventory_transactions : "may relate"
+orders ||--o{ e_invoices : "may have"
+orders ||--o{ idempotency_keys : "referenced-by"
+
+note right of orders
+  Indexes: idx_orders_branch_created, idempotency_keys for idempotency
+end note
+
+note right of products
+  Soft-delete via products.is_active
+  Branch-level prices in product_branch_prices
+end note
+
+note left of audit_logs
+  audit_logs captures request_id, path, ip, user_agent for forensics
+end note
+
+@enduml

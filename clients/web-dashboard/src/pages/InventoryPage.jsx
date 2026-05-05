@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatVnd } from '../utils/format';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function InventoryPage() {
   const { state, actions, derived } = useDashboardContext();
@@ -216,6 +216,7 @@ export default function InventoryPage() {
                 <div className="table-row head">
                   <span>Tên</span>
                   <span>Đơn vị</span>
+                  <span>SL hiện tại</span>
                   <span>Phân loại</span>
                   <span></span>
                 </div>
@@ -223,6 +224,7 @@ export default function InventoryPage() {
                   <div key={ing.id} className="table-row">
                     <span>{ing.name}</span>
                     <span>{ing.unit || '---'}</span>
+                    <span>{ing.on_hand != null ? ing.on_hand : '—'}</span>
                     <select value={ing.category_id || ''} onChange={(e) => actions.handleUpdateIngredientCategory(ing.id, e.target.value)}>
                       <option value="">Chưa phân loại</option>
                       {state.inventoryCategories.map(cat => (

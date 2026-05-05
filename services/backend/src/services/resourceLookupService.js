@@ -13,6 +13,18 @@ module.exports = function createResourceLookupService(deps) {
 
   async function getIngredientBranchOnHand(branchId, ingredientIds) {
     if (!branchId || !ingredientIds?.length) return new Map();
+    return getIngredientOnHandByBranchIds([branchId], ingredientIds);
+  }
+
+  async function getIngredientOnHandByBranchIds(branchIds, ingredientIds) {
+    if (!ingredientIds?.length) return new Map();
+    const params = [ingredientIds];
+    const branchWhere = Array.isArray(branchIds) && branchIds.length
+      ? 'branch_id = ANY($2) AND '
+      : '';
+    if (Array.isArray(branchIds) && branchIds.length) {
+      params.push(branchIds);
+    }
     const result = await db.query(
       `SELECT ingredient_id,
               COALESCE(SUM(CASE
@@ -21,9 +33,9 @@ module.exports = function createResourceLookupService(deps) {
                 WHEN transaction_type = 'ADJUST' THEN quantity
                 ELSE 0 END), 0) AS on_hand
        FROM inventory_transactions
-       WHERE branch_id = $1 AND ingredient_id = ANY($2)
+       WHERE ${branchWhere}ingredient_id = ANY($1)
        GROUP BY ingredient_id`,
-      [branchId, ingredientIds]
+      params
     );
     return new Map(result.rows.map(r => [r.ingredient_id, Number(r.on_hand || 0)]));
   }
@@ -47,6 +59,7 @@ module.exports = function createResourceLookupService(deps) {
     getOrderBranchId,
     getStocktakeBranchId,
     getIngredientBranchOnHand,
+    getIngredientOnHandByBranchIds,
     getTableBranchId,
     getEmployeeBranchId,
     getProductBranchId

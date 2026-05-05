@@ -1,7 +1,7 @@
 import { formatVnd } from '../utils/format';
 import MetricCard from '../components/MetricCard';
 import RevenueChart from '../components/RevenueChart';
-import { useDashboardContext } from '../context/DashboardContext';
+import { useDashboardContext } from '../context/useDashboardContext';
 
 export default function DashboardPage() {
   const { state, derived } = useDashboardContext();

@@ -22,6 +22,7 @@ android/app/intermediates/
 android/app/outputs/
 
 # Android build (nested projects)
+**/android/
 **/android/.gradle/
 **/android/build/
 **/android/app/build/

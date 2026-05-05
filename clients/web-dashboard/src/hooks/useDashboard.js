@@ -153,7 +153,7 @@ export default function useDashboard() {
       const params = branchId ? { branch_id: branchId } : {};
       const [catData, ingData, stockData] = await Promise.all([
         api.getInventoryCategories(),
-        api.getIngredients(),
+        api.getIngredients(branchId ? { branch_id: branchId } : {}),
         api.getStocktakes(params)
       ]);
       setInventoryCategories(catData);
@@ -998,21 +998,38 @@ export default function useDashboard() {
     }
   };
 
-  const handleUploadProductImage = async () => {
+  const handleUploadProductImage = async (fileOverride = null) => {
+    const fileToUpload = fileOverride || productImageFile;
     if (!productForm.id) {
       setStatusMessage('Can chon san pham de upload anh.');
       return;
     }
-    if (!productImageFile) {
+    if (!fileToUpload) {
       setStatusMessage('Chon anh san pham truoc khi upload.');
       return;
     }
     try {
-      const data = await api.uploadProductImage(productForm.id, productImageFile);
+      const data = await api.uploadProductImage(productForm.id, fileToUpload);
       setProducts(prev => prev.map(item => item.id === data.id ? { ...item, image_url: data.image_url } : item));
       setProductImageFile(null);
       setStatusMessage('Da upload anh san pham.');
-    } catch {
+    } catch (err) {
+      if (err?.payload?.error === 'image_too_large') {
+        setStatusMessage(`Anh vuot qua ${err.payload.max_mb}MB.`);
+        return;
+      }
+      if (err?.payload?.error === 'invalid_image_type') {
+        setStatusMessage('Chi ho tro file anh hop le.');
+        return;
+      }
+      if (err?.status === 403) {
+        setStatusMessage('Ban khong co quyen upload anh cho san pham nay.');
+        return;
+      }
+      if (err?.status === 404) {
+        setStatusMessage('Khong tim thay san pham de upload anh.');
+        return;
+      }
       setStatusMessage('Khong the upload anh san pham.');
     }
   };

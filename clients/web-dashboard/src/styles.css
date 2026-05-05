@@ -193,6 +193,10 @@
   gap: 18px;
 }
 
+.grid.sales-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .grid.employee-grid {
   grid-template-columns: repeat(2, minmax(320px, 1fr));
 }
@@ -244,6 +248,27 @@
   gap: 12px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.card-head .head-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-head .head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-head .head-actions select {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
 }
 
 .card-head h3 {
@@ -615,6 +640,10 @@
   }
 
   .inventory-top {
+    grid-template-columns: 1fr;
+  }
+
+  .grid.sales-grid {
     grid-template-columns: 1fr;
   }
 
